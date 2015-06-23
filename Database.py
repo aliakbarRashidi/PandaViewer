@@ -1,21 +1,23 @@
 import sqlalchemy
-import filecmp
-#from migrate.versioning import api
+import migrate
+from migrate.versioning import api
 import contextlib
 from sqlalchemy.ext.declarative import declarative_base
 import os
-import imp
+from threading import Lock
 from Logger import Logger
+from Program import resource_path
 
 CONFIG_DIR = os.path.expanduser("~/.lsv")
 DB_NAME = "db.sqlite"
 DATABASE_URI = "sqlite:///" + os.path.join(CONFIG_DIR, DB_NAME)
 DATABASE_FILE = os.path.join(CONFIG_DIR, DB_NAME)
-MIGRATE_REPO = os.path.join(CONFIG_DIR, "dbrepo/")
+MIGRATE_REPO = resource_path("migrate_repo/")
 
 base = declarative_base()
 engine = sqlalchemy.create_engine(DATABASE_URI)
 session_maker = sqlalchemy.orm.sessionmaker(bind=engine)
+lock = Lock()
 
 
 class Database(Logger):
@@ -35,6 +37,7 @@ class Config(base):
 class Gallery(base):
     __tablename__ = "gallery"
     id = sqlalchemy.Column(sqlalchemy.Integer, primary_key=True)
+    favorite = sqlalchemy.Column(sqlalchemy.Boolean)
     dead = sqlalchemy.Column(sqlalchemy.Boolean, default=False)
     path = sqlalchemy.Column(sqlalchemy.Text)
     type = sqlalchemy.Column(sqlalchemy.Integer, nullable=False)
@@ -44,7 +47,10 @@ class Gallery(base):
     last_read = sqlalchemy.Column(sqlalchemy.Integer)
     read_count = sqlalchemy.Column(sqlalchemy.Integer, default=0, nullable=False)
     time_added = sqlalchemy.Column(sqlalchemy.Integer)
-    metadata_collection = sqlalchemy.orm.relationship("Metadata", lazy="dynamic", backref="gallery")
+    metadata_collection = sqlalchemy.orm.relationship("Metadata", lazy="joined", backref="gallery")
+
+    def to_json(self):
+        return {c.name: getattr(self, c.name) for c in self.__table__.columns}
 
 
 class Metadata(base):
@@ -58,43 +64,21 @@ class Metadata(base):
 def setup():
     Database.logger.debug("Setting up database.")
     if not os.path.exists(DATABASE_FILE):
-        create()
-    # migrate()
-
-
-def create():
-    Database.logger.debug("Creating new database")
-    base.metadata.create_all(engine)
-    # if not os.path.exists(MIGRATE_REPO):
-    #     api.create(MIGRATE_REPO, "database repository")
-    #     api.version_control(DATABASE_URI, MIGRATE_REPO)
-    # else:
-    #     api.version_control(DATABASE_URI, MIGRATE_REPO, api.version(MIGRATE_REPO))
-
-
-# def migrate():
-#     "Stolen from blog.miguelgrinberg.com/post/the-flask-mega-tutorial-part-iv-database"
-#     Database.logger.debug("Creating new migration.")
-#     version = api.db_version(DATABASE_URI, MIGRATE_REPO)
-#     old_migration = os.path.join(MIGRATE_REPO, "versions", "%03d_migration.py" % version)
-#     migration = os.path.join(MIGRATE_REPO, "versions", "%03d_migration.py" % (version + 1))
-#     tmp_module = imp.new_module("old_model")
-#     old_model = api.create_model(DATABASE_URI, MIGRATE_REPO)
-#     exec(old_model, tmp_module.__dict__)
-#     script = api.make_update_script_for_model(DATABASE_URI, MIGRATE_REPO, tmp_module.meta, base.metadata)
-#     open(migration, "wt").write(script)
-#     if os.path.exists(old_migration) and filecmp.cmp(old_migration, migration):
-#         Database.logger.info("No new migration needed, deleting created migration.")
-#         os.remove(migration)
-#     else:
-#         api.upgrade(DATABASE_URI, MIGRATE_REPO)
-
+        base.metadata.create_all(engine)
+        api.version_control(DATABASE_URI, MIGRATE_REPO, version=api.version(MIGRATE_REPO))
+    else:
+        try:
+            api.version_control(DATABASE_URI, MIGRATE_REPO, version=1)
+        except migrate.DatabaseAlreadyControlledError:
+            pass
+    api.upgrade(DATABASE_URI, MIGRATE_REPO)
 
 @contextlib.contextmanager
 def get_session(requester):
     Database.logger.debug("New DB session requested from %s" % requester)
     session = None
     try:
+        lock.acquire()
         session = sqlalchemy.orm.scoped_session(session_maker)
         yield session
         session.commit()
@@ -102,6 +86,7 @@ def get_session(requester):
         session.rollback()
         raise
     finally:
+        lock.release()
         session.close()
 
 

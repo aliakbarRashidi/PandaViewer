@@ -8,9 +8,9 @@ import Exceptions
 import threading
 
 
-class RequestClass(Logger):
+class RequestManager(Logger):
     API_TIME_WAIT = 3
-    API_RETRY_COUNT = 5
+    API_RETRY_COUNT = 3
     API_TIME_REQ_DELAY = 3
     API_MAX_SEQUENTIAL_REQUESTS = 3
     API_TIME_TOO_FAST_WAIT = 100
@@ -45,21 +45,26 @@ class RequestClass(Logger):
             self.lock.release()
 
     def _rest(self, method, url, **kwargs):
+        """
+        Because EX seems to have the ability to detect bots (which this technically is), we do a large amount of salted sleeps
+        """
         retry_count = kwargs.pop("retry_count", self.API_RETRY_COUNT)
         payload = kwargs.pop("payload", None)
         if payload:
             payload = json.dumps(payload)
         while retry_count >= 0:
-            gen_time_sleep = self.API_TIME_REQ_DELAY * random.randint(100, 200)/100
+            gen_time_sleep = self.salt_time(self.API_TIME_REQ_DELAY)
             time_diff = time.time() - self.prevtime
             if time_diff <= gen_time_sleep:
                 time.sleep(gen_time_sleep)
             sequential = time_diff <= self.SEQ_TIME_DIFF
             if sequential and self.count >= self.API_MAX_SEQUENTIAL_REQUESTS:
-                time.sleep(self.API_TIME_WAIT * random.randint(100, 200)/100)
+                time.sleep(self.salt_time(self.API_TIME_WAIT))
                 self.count = 0
             if sequential:
                 self.count += 1
+            else:
+                self.count = 0
             self.logger.info("Sending %s request to %s with payload %s" %
                              (method, url, payload))
             self.prevtime = time.time()
@@ -85,6 +90,10 @@ class RequestClass(Logger):
             return response.text
         else:
             return response
+
+    @staticmethod
+    def salt_time(sleep_time):
+        return sleep_time * (random.randint(1000, 2000)/1000)
 
     def validate_response(self, response):
         content_type = response.headers["content-type"]
@@ -120,5 +129,4 @@ class RequestClass(Logger):
         return self.rest("post", *args, **kwargs)
 
 
-RequestManager = RequestClass()
-del RequestClass
+RequestManager = RequestManager()

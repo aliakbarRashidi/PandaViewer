@@ -12,7 +12,8 @@ class GalleryBoilerplate(Logger): # Need to fix this shit, not scalable with add
 
     @property
     def title(self):
-        return self.ctitle or self.extitle or self.name
+        title = self.ctitle or self.extitle or self.name
+        return title.replace("_", " ")
 
     @property
     def ctitle(self):
@@ -56,7 +57,7 @@ class GalleryBoilerplate(Logger): # Need to fix this shit, not scalable with add
 
     @property
     def rating(self):
-        return self.crating or self.exrating
+        return self.crating or self.exrating or 0
 
     @property
     def crating(self):
