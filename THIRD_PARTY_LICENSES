@@ -1,0 +1,18 @@
+PandaViewer makes use of the following third party libraries. I have provided a link to where you can obtain the relevant license for each of these.
+
+
+PyQt5 - GPL v3 - http://www.gnu.org/licenses/gpl-3.0.en.html
+Qt5 - LGPL v3 - https://www.gnu.org/licenses/lgpl-3.0.en.html
+SQLAlchemy - MIT - http://opensource.org/licenses/MIT
+Requests - Apache v2 - http://opensource.org/licenses/Apache-2.0
+rarfile - ISC - http://opensource.org/licenses/ISC
+Send2Trash - BSD - http://opensource.org/licenses/BSD-3-Clause
+beautifulsoup4 - MIT - http://opensource.org/licenses/MIT
+scandir - BSD - http://opensource.org/licenses/BSD-3-Clause
+hurry.filesize - ZPL v2.1 - http://old.zope.org/Resources/License/ZPL-2.1
+
+
+Program icon provided by - http://polkaparadise.deviantart.com/art/FREE-Panda-icon-352383477
+
+
+We also provide a unrar binary/library with our windows builds. For more details, see the LICENSE file.
