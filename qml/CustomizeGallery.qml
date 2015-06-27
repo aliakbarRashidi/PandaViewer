@@ -32,7 +32,7 @@ Page {
         Action {
             iconName: "content/Save"
             name: "Save"
-            //enabled: !exURLField.hasError
+            enabled: !exURLField.hasError
             onTriggered: {
                 save()
                 mainWindow.pageStack.pop()
@@ -76,6 +76,7 @@ Page {
         delegate: Component {
             Gallery {
                 id: galleryCard
+                customizationEnabled: false
             }
         }
     }

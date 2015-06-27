@@ -84,10 +84,9 @@ class Gallery(GalleryBoilerplate):
                                  map(lambda x: re.sub("^\s+", "", x),
                                      ctags.split(","))))
 
-        self.extags = list(filter(None,
-                                  map(lambda x: re.sub("^\s+", "", x),
-                                      extags.split(","))))
-        if ctitle != self.ctitle or self.name:
+        self.extags = list(map(lambda x: x.replace(" ", "_"),
+                               filter(None, map(lambda x: re.sub("^\s+", "", x), extags.split(",")))))
+        if ctitle != (self.ctitle or self.name):
             self.ctitle = ctitle
         if exurl:
             old_id = self.id
@@ -145,8 +144,11 @@ class Gallery(GalleryBoilerplate):
 
     @property
     def sort_name(self):
-        "Only used for sorting. Removed parens/braces/brackets."
         return Search.clean_title(self.title)
+
+    @property
+    def clean_name(self):
+        return Search.clean_title(self.title, remove_enclosed=False)
 
     @property
     def sort_rating(self):
@@ -159,12 +161,12 @@ class Gallery(GalleryBoilerplate):
     def find_in_db(self):
         # TODO: Deprecate uuid for folder galleries
         uuid = None
-        # if os.path.exists(self.db_file):
-        #     try:
-        #         self.db_uuid = self.load_db_file()
-        #     except Exception:
-        #         self.logger.warning("DB UUID file invalid.", exc_info=True)
-        #         self.delete_db_file()
+        if os.path.exists(self.db_file):
+            try:
+                self.db_uuid = self.load_db_file()
+            except Exception:
+                self.logger.warning("DB UUID file invalid.", exc_info=True)
+                self.delete_db_file()
         if isinstance(self, ArchiveGallery):
             with Database.get_session(self) as session:
                 uuid = self.generate_uuid()
@@ -380,8 +382,12 @@ class Gallery(GalleryBoilerplate):
         raise NotImplementedError
 
     def resize_image(self):
-        return self.get_image().scaledToWidth(self.IMAGE_WIDTH,
-                                              QtCore.Qt.SmoothTransformation)
+        image = self.get_image()
+        if image.width() > image.height():
+            transform = QtGui.QTransform()
+            transform.rotate(-90)
+            image = image.transformed(transform)
+        return image.scaledToWidth(self.IMAGE_WIDTH, QtCore.Qt.SmoothTransformation)
 
     def verify_hash(self, image_hash):
         if self.image_hash != image_hash:

@@ -42,7 +42,7 @@ class Program(QtWidgets.QApplication, Logger):
     DEFAULT_CONFIG = {"dirs": [], "cookies": {"ipb_member_id": "",
                                               "ipb_pass_hash": ""}}
     QML_PATH = resource_path("qml/")
-    MAX_TAG_RETURN_COUNT = 3
+    MAX_TAG_RETURN_COUNT = 5
 
     class SortMap(object):
         NameSort = 0
@@ -62,7 +62,6 @@ class Program(QtWidgets.QApplication, Logger):
         self.version = "0.1"  # Most likely used for db changes only
         self.page_number = 0
         self.search_text = ""
-
         self.addLibraryPath(self.QML_PATH)
         self.qml_engine = QtQml.QQmlApplicationEngine()
         self.qml_engine.addImportPath(self.QML_PATH)
@@ -236,6 +235,8 @@ class Program(QtWidgets.QApplication, Logger):
         self.save_config()
 
     def process_search(self, search_text):
+        quote_regex = re.compile(ur"(-)?\"(.*?)\"")
+        filter_regex = re.compile(ur"(?:^|\s)\-(.*?)(?=(?:$|\ ))")
         search_text = search_text.lower()
         rating = re.search(r"rating:(\S*)", search_text)
         if rating:
@@ -247,16 +248,11 @@ class Program(QtWidgets.QApplication, Logger):
                 eval("0.0" + rating)
             except:
                 raise Exceptions.InvalidRatingSearch()
-        filter_words = re.findall(r"[\"]?[\-][\"]?([\w]*)[\"]?",
-                                  search_text)
-        search_text = re.sub(r"[\"]?[\-][\"]?([\w]*)[\"]?", "",
-                             search_text)
-        filter_words = [w.replace(" ", "_") for w in filter_words]
-        quoted_words = re.findall(r"\"([^-].+?)\"", search_text)
-        quoted_words = [w.replace(" ", "_") for w in quoted_words]
-        words = re.sub(r"\"([^-].+?)\"", "", search_text)
-        words = words.split() + quoted_words
-        words = [w.replace("\"", "") for w in words]
+        quoted_words = re.findall(quote_regex, search_text)
+        quoted_words = " ".join(map(lambda x: "".join(x).replace(" ", "_"), quoted_words))
+        search_text = re.sub(quote_regex, "", search_text) + quoted_words
+        filter_words = re.findall(filter_regex, search_text)
+        words = re.sub(filter_regex, "", search_text).split()
         self.logger.info("Search words: %s" % words)
         self.logger.info("Filter words: %s" % filter_words)
         self.logger.info("Rating function: %s" % rating)
@@ -274,7 +270,7 @@ class Program(QtWidgets.QApplication, Logger):
             for gallery in self.galleries:
                 if gallery.expired:
                     continue
-                title = re.sub("\W", " ", gallery.title.lower()).split()
+                title = gallery.clean_name.lower().split()
                 tags = [t.replace(" ", "_").lower() for t in gallery.tags]
                 if rating and (not gallery.rating or
                                not eval(gallery.rating + rating)):
@@ -310,7 +306,7 @@ class Program(QtWidgets.QApplication, Logger):
     def setup_tags(self):
         tags = []
         tag_count_map = {}
-        for gallery in [g for g in self.galleries if not g.expired]:
+        for gallery in self.filter_galleries(self.galleries):
             new_tags = list(set(map(lambda x: x.replace(" ", "_").lower(), gallery.tags)))
             for tag in new_tags:
                 if tag_count_map.get(tag):

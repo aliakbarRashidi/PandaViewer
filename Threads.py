@@ -98,7 +98,7 @@ class GalleryThread(BaseThread):
     So I switched from the ORM to the core for these two intensive statements.
     """
 
-    @profile(sort="tottime", filename="dbload.stats")
+    @profile(sort="tottime")
     def load_from_db(self):
         candidates = {"folder": [], "zip": [], "rar": []}
         with Database.get_session(self) as session:
@@ -142,7 +142,6 @@ class GalleryThread(BaseThread):
         self.create_from_dict(candidates)
         self.loaded = True
 
-    @profile(sort="tottime", filename="find.stats")
     def find_galleries(self):
         candidates = {"folder": [], "zip": [], "rar": []}
         paths = map(os.path.normpath, map(os.path.expanduser,
@@ -229,7 +228,6 @@ class ImageThread(BaseThread):
             galleries = self.queue.get()
             self.generate_images(galleries)
 
-    @profile(sort="tottime", filename="image.stats")
     def generate_images(self, galleries):
         for gallery in galleries:
             if gallery.expired:

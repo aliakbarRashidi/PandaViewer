@@ -53,7 +53,7 @@ class GalleryBoilerplate(Logger): # Need to fix this shit, not scalable with add
 
     @property
     def tags(self):
-        return list(set(self.extags + self.ctags))
+        return list(map(lambda x: x.replace(" ", "_"), set(self.extags + self.ctags)))
 
     @property
     def rating(self):

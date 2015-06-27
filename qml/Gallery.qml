@@ -86,9 +86,17 @@ Card {
 
         MouseArea {
             id: imageMouseArea
+            acceptedButtons: Qt.LeftButton | Qt.RightButton
             anchors.fill: parent
             hoverEnabled: true
-            onClicked: openGallery()
+            onClicked: {
+                if (mouse.button & Qt.LeftButton) {
+                    openGallery()
+                }
+                else if (mouse.button & Qt.RightButton) {
+                    menuDropdown.open(imageMouseArea, mouseX, mouseY)
+                }
+            }
 
             cursorShape: Qt.OpenHandCursor
         }

@@ -10,22 +10,16 @@ class Search(Logger):
     BASE_URL = r"http://exhentai.org/?f_doujinshi=1&f_manga=1&f_artistcg=1&f_gamecg=1&f_western=1&f_non-h=1&f_imageset=1&f_cosplay=1&f_asianporn=1&f_misc=1&f_sname=on&adv&f_search=%s&advsearch=1&f_srdd=2&f_apply=Apply+Filter&f_shash=%s&page=%s&fs_smiliar=1&fs_covers=%s"
 
     @classmethod
-    def clean_title(cls, name):
-        cls = cls()
-        #cls.logger.debug("Input name: %s" % name)
+    def clean_title(cls, name, remove_enclosed=True):
         banned_chars = ["=", "-", ":", "|", "~", "+", "]", "[", ",", ")", "("]
-
-        # Don't remember what these regex do, was probably drunk when I made them
-        # name = re.sub(r"\{[^}]*\}", " ", name)
-        # name = re.sub(r"[\w]*[\-][\w]*", " ", name)
         pairs = [("{", "}"), ("(", ")"), ("[", "]")]
-        regex = ur"\s*\%s[^%s]*\%s"
-        for pair in pairs:
-            name = re.sub(regex % (pair[0], pair[0], pair[1]), "",  name)
+        if remove_enclosed:
+            regex = ur"\s*\%s[^%s]*\%s"
+            for pair in pairs:
+                name = re.sub(regex % (pair[0], pair[0], pair[1]), "",  name)
         name = name.lstrip().lower()
         for char in banned_chars:
             name = name.replace(char, " ")
-        #cls.logger.debug("Output name: %s" % name)
         return " ".join(name.split())
 
     @classmethod
@@ -67,7 +61,7 @@ class Search(Logger):
     @classmethod
     def _search(cls, **kwargs):
         cls = cls()
-        recursive = False
+        recursive = kwargs.get("recursive", False)
         page_num = kwargs.get("page_num", 0)
         num_pages = kwargs.get("num_pages", 0)
         sha_hash = kwargs.get("sha_hash", "")

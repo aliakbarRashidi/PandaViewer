@@ -48,7 +48,6 @@ ApplicationWindow {
 
     function setCurrentMetadataGallery(galleryName) {
         metadataSnackbar.open("Getting metadata for " + galleryName)
-
     }
 
     signal setSortMethod(int sortType, int reversed)
@@ -72,7 +71,6 @@ ApplicationWindow {
     signal searchForDuplicates
 
     signal pageChange(int page)
-
 
     function setTags(tags) {
 
@@ -127,9 +125,155 @@ ApplicationWindow {
 
         id: page
         title: "PandaViewer"
-        //tabs: navDrawer.enabled ? [] : sectionTitles
         tabs: []
         actionBar.maxActionCount: 6
+
+
+        actionBar.extendedContent: Rectangle {
+            id: searchContainer
+            visible: false
+            property int start: 0
+            property int end: 0
+            anchors {
+                left: parent.left
+                right: parent.right
+                margins: 0
+            }
+            color: Palette.colors["blue"]["500"]
+            height: visible ? Units.dp(32) : 0
+
+            function toggle() {
+                visible = !visible && enabled
+            }
+
+            function accecpt() {
+                setSearchText(searchText.text)
+                autoCompleteDropdown.close()
+            }
+
+            Card {
+                id: searchCard
+                anchors {
+                    left: parent.left
+                    right: parent.right
+                    leftMargin: Units.dp(4)
+                    rightMargin: Units.dp(4)
+                    topMargin: 0
+                    bottomMargin: Units.dp(4)
+                }
+
+                height: Units.dp(24)
+
+                TextField {
+                    id: searchText
+                    placeholderText: "Search..."
+                    anchors {
+                        left: parent.left
+                        right: parent.right
+                    }
+                    Keys.onReturnPressed: {
+                        proccessEnter()
+                    }
+
+                    function findWord() {
+                        matchingTags.clear()
+                        var nextSpace = searchText.text.indexOf(
+                                    " ", searchText.cursorPosition)
+                        searchContainer.end = nextSpace == -1 ? searchText.text.length : nextSpace
+                        var substr = searchText.text.substring(0,
+                                                               searchContainer.end)
+                        searchContainer.start = substr.lastIndexOf(" ")
+                        searchContainer.start = searchContainer.start
+                                == 0 ? searchContainer.start : searchContainer.start + 1
+
+                        var word = searchText.text.substring(
+                                    searchContainer.start, searchContainer.end)
+                        mainWindow.askForTags(word)
+                    }
+                    function proccessEnter() {
+                        if (autoCompleteDropdown.visible) {
+                            addTag()
+                            autoCompleteDropdown.close()
+                        } else {
+                           searchContainer.accecpt()
+                        }
+                    }
+
+                    function addTag() {
+                        var first = searchText.text.substring(
+                                    0, searchContainer.start)
+                        var end = searchText.text.substring(
+                                    searchContainer.end, searchText.text.length)
+                        searchText.text = first + listView.currentItem.text + end
+                    }
+
+                    onTextChanged: {
+                        var lastIsSpace = searchText.text.substring(
+                                    searchText.text.length - 1) == " "
+                        if (searchText.text.length != 0 && !lastIsSpace) {
+                            autoCompleteDropdown.open(searchText, 0,
+                                                      searchText.height)
+                            findWord()
+                        } else {
+                            autoCompleteDropdown.close()
+                        }
+                    }
+
+                    Keys.onTabPressed: {
+                        autoCompleteDropdown.view.incrementCurrentIndex()
+                    }
+
+                    Keys.onDownPressed: autoCompleteDropdown.view.incrementCurrentIndex()
+                    Keys.onUpPressed: autoCompleteDropdown.view.decrementCurrentIndex()
+                }
+
+
+        Dropdown {
+            id: autoCompleteDropdown
+            property alias view: listView
+            width: searchText.width
+            height: listView.height
+
+            ListView {
+                id: listView
+                anchors {
+                    left: parent.left
+                    right: parent.right
+                    top: parent.top
+                }
+                spacing: Units.dp(4)
+
+                height: contentHeight
+                keyNavigationWraps: true
+                model: matchingTags
+
+                delegate: ListItem.Standard {
+                    id: item
+                    text: tag
+                    height: Units.dp(24)
+                    selected: listView.currentItem == item
+                    MouseArea {
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        onEntered: listView.currentIndex = index
+                        onPositionChanged: listView.currentIndex = index
+                        onClicked: {
+                            searchText.addTag()
+                            autoCompleteDropdown.close()
+                        }
+                    }
+                }
+            }
+        }
+
+
+
+
+
+
+            }
+
+        }
 
         actions: [
             Action {
@@ -145,6 +289,7 @@ ApplicationWindow {
                 iconName: "awesome/ellipsis_h"
                 name: "Goto page"
                 onTriggered: pageDialog.show()
+                enabled: numPages > 1
             },
 
             Action {
@@ -159,7 +304,7 @@ ApplicationWindow {
                 id: searchAction
                 iconName: "action/search"
                 name: "Search"
-                onTriggered: searchDialog.show()
+                onTriggered: searchContainer.toggle()
             },
 
             Action {
@@ -223,7 +368,6 @@ ApplicationWindow {
                     Keys.onDownPressed: console.log("Test")
                     Loader {
                         id: example
-                        onLoaded: example.forceActiveFocus()
                         anchors.fill: parent
                         asynchronous: false
 
@@ -261,132 +405,6 @@ ApplicationWindow {
     }
 
     Dialog {
-        id: searchDialog
-        title: "Search"
-        positiveButtonText: "Search"
-        property int start: 0
-        property int end: 0
-
-        TextField {
-            id: searchText
-            placeholderText: "Search..."
-            anchors {
-                left: parent.left
-                right: parent.right
-            }
-            Keys.onReturnPressed: {
-                proccessEnter()
-            }
-
-            function findWord() {
-                matchingTags.clear()
-                var nextSpace = searchText.text.indexOf(
-                            " ", searchText.cursorPosition)
-                searchDialog.end = nextSpace == -1 ? searchText.text.length : nextSpace
-                var substr = searchText.text.substring(0, searchDialog.end)
-                searchDialog.start = substr.lastIndexOf(" ")
-                searchDialog.start = searchDialog.start
-                        == 0 ? searchDialog.start : searchDialog.start + 1
-
-                var word = searchText.text.substring(searchDialog.start,
-                                                     searchDialog.end)
-                mainWindow.askForTags(word)
-            }
-            function proccessEnter() {
-                if (autoCompleteDropdown.visible) {
-                    addTag()
-                    autoCompleteDropdown.close()
-                } else {
-                    searchDialog.accepted()
-                }
-            }
-
-            function addTag() {
-                var first = searchText.text.substring(0, searchDialog.start)
-                var end = searchText.text.substring(searchDialog.end,
-                                                    searchText.text.length)
-                searchText.text = first + listView.currentItem.text + end
-            }
-
-            onTextChanged: {
-                var lastIsSpace = searchText.text.substring(
-                            searchText.text.length - 1) == " "
-                if (searchText.text.length != 0 && !lastIsSpace) {
-                    autoCompleteDropdown.open(searchText, 0, searchText.height)
-                    findWord()
-                } else {
-                    autoCompleteDropdown.close()
-                }
-            }
-
-            Keys.onTabPressed: {
-                autoCompleteDropdown.view.incrementCurrentIndex()
-            }
-
-            Keys.onDownPressed: autoCompleteDropdown.view.incrementCurrentIndex(
-                                    )
-            Keys.onUpPressed: autoCompleteDropdown.view.decrementCurrentIndex()
-        }
-
-        Dropdown {
-            id: autoCompleteDropdown
-            property alias view: listView
-            width: searchText.width
-
-            Rectangle {
-                anchors.fill: parent
-                radius: Units.dp(2)
-            }
-
-            height: listView.height
-
-            ListView {
-                id: listView
-                anchors {
-                    left: parent.left
-                    right: parent.right
-                    top: parent.top
-                    //topMargin: Units.dp(8)
-                }
-
-                height: contentHeight
-                keyNavigationWraps: true
-                model: matchingTags
-
-                delegate: ListItem.Standard {
-                    id: item
-                    text: tag
-                    selected: listView.currentItem == item
-                    MouseArea {
-                        anchors.fill: parent
-                        hoverEnabled: true
-                        onEntered: listView.currentIndex = index
-                        onPositionChanged: listView.currentIndex = index
-                        onClicked: {
-                            searchText.addTag()
-                            autoCompleteDropdown.close()
-                        }
-                    }
-                }
-            }
-        }
-
-        Component.onCompleted: searchText.forceActiveFocus()
-        Keys.onEscapePressed: rejected()
-
-        onAccepted: {
-            setSearchText(searchText.text)
-            autoCompleteDropdown.close()
-            searchDialog.close()
-        }
-
-        onRejected: {
-            autoCompleteDropdown.close()
-            searchDialog.close()
-        }
-    }
-
-    Dialog {
         id: pageDialog
         title: "Goto page"
         positiveButtonText: "Go"
@@ -406,7 +424,6 @@ ApplicationWindow {
             }
             hasError: !acceptableInput
             Keys.onReturnPressed: pageDialog.accepted()
-            focus: true
         }
 
         onAccepted: {
@@ -419,12 +436,12 @@ ApplicationWindow {
         id: exceptionDialog
         title: "Whoops"
         Component.onCompleted: negativeButton.visible = false
-        property alias messageText: label.text
+        property alias messageText: exceptionLabel.text
         property bool fatal: true
         positiveButtonText: fatal ? "Quit" : "Ok"
 
         Label {
-            id: label
+            id: exceptionLabel
             anchors {
                 left: parent.left
                 right: parent.right
@@ -464,7 +481,6 @@ ApplicationWindow {
             wrapMode: Text.WordWrap
         }
         onAccepted: searchForDuplicates()
-
     }
 
     Dialog {
@@ -494,13 +510,13 @@ ApplicationWindow {
         }
 
         Grid {
-                ExclusiveGroup {
-                    id: sortType
-                }
+            ExclusiveGroup {
+                id: sortType
+            }
 
-                ExclusiveGroup {
-                    id: sortMode
-                }
+            ExclusiveGroup {
+                id: sortMode
+            }
             Column {
 
                 Repeater {
@@ -536,13 +552,5 @@ ApplicationWindow {
         buttonText: "Dismiss"
         onClicked: visible = false
         fullWidth: true
-
-
     }
-
-
-
-
-
-
 }

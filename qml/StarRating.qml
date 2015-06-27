@@ -3,8 +3,6 @@ import QtQuick.Controls 1.3
 import QtQuick.Layouts 1.1
 import Material 0.1
 
-
-
 RowLayout {
     id: layout
     spacing: 0
@@ -26,8 +24,8 @@ RowLayout {
             property int starNum: modelData
             name: starRepeater.noStar
             size: Units.dp(16)
-            //color: theme.accentColor
 
+            //color: theme.accentColor
             states: [
                 State {
                     when: (starIcon.starNum <= starRepeater.currentStarValue)
@@ -38,7 +36,9 @@ RowLayout {
                 },
 
                 State {
-                    when: Math.round(starRepeater.currentStarValue) == Math.floor(starIcon.starNum)
+                    when: Math.round(
+                              starRepeater.currentStarValue) == Math.floor(
+                              starIcon.starNum)
                     PropertyChanges {
                         target: starIcon
                         name: starRepeater.halfStar
@@ -65,10 +65,13 @@ RowLayout {
                         right: leftArea ? parent.horizontalCenter : parent.right
                     }
                     hoverEnabled: true
+                    Tooltip {
+                        text: "Rating: " + currentRating
+                        mouseArea: parent
+                    }
                     onEntered: {
                         starRepeater.currentStarValue
-                               = leftArea ? starIcon.starNum - .5 : starIcon.starNum
-
+                                = leftArea ? starIcon.starNum - .5 : starIcon.starNum
                     }
                     onExited: starRepeater.currentStarValue = currentRating
                     onClicked: {
