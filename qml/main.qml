@@ -55,12 +55,11 @@ ApplicationWindow {
     signal saveSettings(var settings)
     signal askForSettings
     signal setSettings(var settings)
-    signal addGallery(var gallery)
+    signal addAndClearGalleries(var galleries)
     signal removeGallery(string uuid)
     signal openGallery(string uuid)
     signal openGalleryFolder(string uuid)
-    signal clearGalleries
-    signal setUiGallery(string uuid, var gallery)
+    signal setGallery(string uuid, var gallery)
     signal updateGalleryRating(string uuid, real rating)
     signal saveGallery(string uuid, var gallery)
     signal askForTags(var tag)
@@ -71,6 +70,11 @@ ApplicationWindow {
     signal searchForDuplicates
 
     signal pageChange(int page)
+
+
+    signal setUIGallery(int index, var gallery)
+    signal setUIGalleries(var galleries)
+    signal removeUIGallery(int index, int count)
 
     function setTags(tags) {
 
@@ -365,9 +369,9 @@ ApplicationWindow {
                     clip: true
                     boundsBehavior: Flickable.DragOverBounds
                     contentHeight: Math.max(example.implicitHeight + 40, height)
-                    Keys.onDownPressed: console.log("Test")
                     Loader {
                         id: example
+
                         anchors.fill: parent
                         asynchronous: false
 
@@ -375,10 +379,11 @@ ApplicationWindow {
                             anchors.fill: parent
                             acceptedButtons: Qt.ForwardButton | Qt.BackButton
                             onClicked: {
-                                if (mouse.button == Qt.ForwardButton
+                                mouse.accepted = true
+                                if (mouse.button == Qt.ForwardButton && page.actionBar.enabled
                                         && forwardsPageAction.enabled) {
                                     pageChange(currentPage + 1)
-                                } else if (mouse.button == Qt.BackButton
+                                } else if (mouse.button == Qt.BackButton && page.actionBar.enabled
                                            && backPageAction.enabled) {
                                     pageChange(currentPage - 1)
                                 }
@@ -520,7 +525,7 @@ ApplicationWindow {
             Column {
 
                 Repeater {
-                    model: [["Name", 0], ["Read Count", 1], ["Last Read", 2], ["Rating", 3], ["Date Added", 4]]
+                    model: [["Name", 0], ["Read Count", 1], ["Last Read", 2], ["Rating", 3], ["Date Added", 4], ["File Path", 5]]
 
                     delegate: RadioButton {
                         checked: modelData[1] === 0

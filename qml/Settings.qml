@@ -76,12 +76,16 @@ Page {
             width: tabView.width
             height: tabView.height
 
+
             Column {
                 anchors {
                     fill: parent
                     margins: Units.dp(16)
                 }
 
+            ListItem.Subheader {
+                text: "ExH Settings"
+            }
                 SettingsItem {
                     id: exUserID
                     text: "ExH User ID"

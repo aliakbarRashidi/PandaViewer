@@ -1,15 +1,34 @@
 import QtQuick 2.4
 import QtQuick.Controls 1.3
 import QtQuick.Layouts 1.1
+import QtQml.Models 2.1
 import Material 0.1
 
 Item {
     id: galleriesPage
+    objectName: "galleries"
     property bool scanningMode: false
     property bool noSearchResults: false
     ListModel {
         id: galleryModel
     }
+
+    DelegateModel {
+        id: delegateModel
+
+        model: galleryModel
+        delegate: Component {
+            Loader {
+                visible: status == Loader.Ready
+                sourceComponent: Component {
+                    Gallery{}
+                }
+                asynchronous: index >= 50
+            }
+        }
+    }
+
+
     ProgressCircle {
         id: progressCircle
         anchors.centerIn: parent
@@ -17,24 +36,16 @@ Item {
     }
 
     Component.onCompleted: {
-        mainWindow.addGallery.connect(galleriesPage.addGallery)
         mainWindow.removeGallery.connect(galleriesPage.removeGallery)
         mainWindow.scanningModeSet.connect(galleriesPage.setScanningMode)
-        mainWindow.clearGalleries.connect(galleriesPage.clearGalleries)
-        mainWindow.setUiGallery.connect(galleriesPage.setGallery)
+        mainWindow.setGallery.connect(galleriesPage.setGallery)
         mainWindow.setNoSearchResults.connect(galleriesPage.setNoSearchResults)
-    }
-
-    function addGallery(gallery) {
-        galleryModel.append(gallery)
+        mainWindow.setUIGallery.connect(galleriesPage.setUIGallery)
+        mainWindow.removeUIGallery.connect(galleriesPage.removeUIGallery)
     }
 
     function removeGallery(uuid) {
         galleryModel.remove(getIndexFromUUID(uuid))
-    }
-
-    function clearGalleries() {
-        galleryModel.clear()
     }
 
     function getIndexFromUUID(uuid) {
@@ -47,6 +58,17 @@ Item {
 
     function setGallery(uuid, gallery) {
         galleryModel.set(getIndexFromUUID(uuid), gallery)
+    }
+
+    function setUIGallery(index, gallery) {
+        galleryContent.positionViewAtBeginning()
+        galleryModel.set(index, gallery)
+//        delegateModel.items.addGroups(index, 1, "visible")
+    }
+
+    function removeUIGallery(index, count) {
+//        delegateModel.items.removeGroups(index, count, "visible")
+        galleryModel.remove(index)
     }
 
     function setNoSearchResults(noResults) {
@@ -188,16 +210,16 @@ Item {
         //        rowSpacing: 0
         //        columnSpacing: 0
         cellWidth: Units.dp(200 + 16)
-        cellHeight: Units.dp(350 + 16)
+        cellHeight: Units.dp(350 + 16 + 16)
 
-        model: galleryModel
-        cacheBuffer: 4000
+        model: delegateModel
+        cacheBuffer: Units.dp((350 + 16) * 50)
 
-        delegate: Component {
-            Gallery {
-                id: gallery
-            }
-        }
+//        delegate: Component {
+//            Gallery {
+//                id: gallery
+//            }
+//        }
 
         //        Repeater {
         //            id: galleryRepeater
@@ -212,5 +234,6 @@ Item {
 
     Scrollbar {
         flickableItem: galleryContent
+
     }
 }

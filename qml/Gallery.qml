@@ -5,13 +5,32 @@ import Material 0.1
 import Material.ListItems 0.1 as ListItem
 import Material.Extras 0.1
 
-
 Card {
     id: galleryCard
-    height: Units.dp(350)
+    height: Units.dp(350 + 16)
     width: Units.dp(200)
     flat: false
     property bool customizationEnabled: true
+    Tooltip {
+        text: tooltip
+        mouseArea: imageMouseArea
+        height: Units.dp((40 - 16) + (16 * tooltipLines))
+    }
+
+    MouseArea {
+        id: imageMouseArea
+        acceptedButtons: Qt.LeftButton | Qt.RightButton
+        anchors.fill: parent
+        hoverEnabled: true
+        onClicked: {
+            if (mouse.button & Qt.LeftButton) {
+                openGallery()
+            } else if (mouse.button & Qt.RightButton) {
+                menuLoader.sourceComponent = menuComponent
+                menuLoader.item.open(imageMouseArea, mouseX, mouseY)
+            }
+        }
+    }
 
     anchors {
         margins: 0
@@ -45,7 +64,6 @@ Card {
         id: titleText
         anchors {
             horizontalCenter: parent.horizontalCenter
-            //top: parent.top
             bottom: bottomRow.top
             margins: Units.dp(8)
         }
@@ -55,6 +73,8 @@ Card {
         horizontalAlignment: Text.AlignHCenter
         verticalAlignment: Text.AlignVCenter
         elide: Text.ElideRight
+        maximumLineCount: 2
+        wrapMode: Text.Wrap
 
         Tooltip {
             text: titleText.text
@@ -67,50 +87,14 @@ Card {
             hoverEnabled: true
         }
     }
-    states: [
-        State {
-            name: "imageLoading"
-            when: galleryImage.status == Image.Loading
-            PropertyChanges {
-                target: galleryImage
-            }
-        }
-    ]
-
     Image {
-        Tooltip {
-            text: tooltip
-            mouseArea: imageMouseArea
-            implicitHeight: Units.dp(16) * tooltipLines
-        }
-
-        MouseArea {
-            id: imageMouseArea
-            acceptedButtons: Qt.LeftButton | Qt.RightButton
-            anchors.fill: parent
-            hoverEnabled: true
-            onClicked: {
-                if (mouse.button & Qt.LeftButton) {
-                    openGallery()
-                }
-                else if (mouse.button & Qt.RightButton) {
-                    menuDropdown.open(imageMouseArea, mouseX, mouseY)
-                }
-            }
-
-            cursorShape: Qt.OpenHandCursor
-        }
-
         id: galleryImage
 
         source: image
-        smooth: true
         cache: true
         sourceSize.width: 200
         asynchronous: true
         anchors {
-            //horizontalCenter: parent.horizontalCenter
-            //verticalCenter: parent.verticalCenter
             top: parent.top
             left: parent.left
             right: parent.right
@@ -119,7 +103,8 @@ Card {
         width: Units.dp(200)
         height: Math.min(Units.dp(300), implicitHeight)
     }
-    Rectangle {
+
+    Item {
         id: bottomRow
         height: Units.dp(16)
         anchors {
@@ -129,92 +114,109 @@ Card {
             left: parent.left
         }
 
-        IconButton {
-            id: button
-            iconName: "awesome/ellipsis_v"
-            size: Units.dp(16)
-            anchors {
-                right: parent.right
-                verticalCenter: parent.verticalCenter
-            }
-
-            function openDropdown() {
-                menuDropdown.open(button, 0, button.height)
-            }
-
-            //Can't assign directly for some reason
-            Component.onCompleted: button.clicked.connect(button.openDropdown)
-        }
-
-        StarRating {
-            id: starRating
-            currentRating: rating
-            anchors {
-                left: parent.left
-                verticalCenter: parent.verticalCenter
-            }
-        }
-
-        Component.onCompleted: {
-            starRating.starClicked.connect(updateRating)
+        Loader {
+            id: bottomLoader
+            anchors.fill: parent
+            asynchronous: false
+            sourceComponent: bottomComponent
         }
     }
 
-    Dropdown {
-        id: menuDropdown
-        property alias view: listView
-        width: Units.dp(200)
-        height: listView.childrenRect.height
+    Loader {
+        id: menuLoader
+    }
 
-        data: Column {
-            id: listView
+    Component {
+        id: menuComponent
+        Dropdown {
+            id: menuDropdown
+            property alias view: listView
+            width: Units.dp(200)
+            height: listView.childrenRect.height
 
-            anchors {
-                fill: parent
-            }
+            data: Column {
+                id: listView
 
-            ListItem.Standard {
-                visible: customizationEnabled
-                id: editItem
-                text: "Info"
-                onClicked: {
-
-                    //Here be deep magic
-                    menuDropdown.close()
-                    pageStack.push(Qt.resolvedUrl("CustomizeGallery.qml"), {
-                                     gallery: galleryModel.get(index)
-                                   })
-
+                anchors {
+                    fill: parent
                 }
-            }
 
+                ListItem.Standard {
+                    visible: customizationEnabled
+                    id: editItem
+                    text: "Info"
+                    onClicked: {
 
-            ListItem.Standard {
-                text: "Delete"
-                onClicked: {
-                    menuDropdown.close()
-                    removeGallery()
+                        //Here be deep magic
+                        menuDropdown.close()
+                        pageStack.push(Qt.resolvedUrl("CustomizeGallery.qml"), {
+                                           gallery: galleryModel.get(index)
+                                       })
+                    }
                 }
-            }
 
-            ListItem.Standard {
-                text: "Open folder"
-                onClicked: {
-                    menuDropdown.close()
-                    openGalleryFolder()
+                ListItem.Standard {
+                    text: "Delete"
+                    onClicked: {
+                        menuDropdown.close()
+                        removeGallery()
+                    }
                 }
-            }
 
+                ListItem.Standard {
+                    text: "Open folder"
+                    onClicked: {
+                        menuDropdown.close()
+                        openGalleryFolder()
+                    }
+                }
 
-            ListItem.Standard {
-                property bool needMetadata: !hasMetadata
-                text: needMetadata ? "Download metadata" : "View on EX"
-                onClicked: {
-                    menuDropdown.close()
-                    exAction(needMetadata)
+                ListItem.Standard {
+                    property bool needMetadata: !hasMetadata
+                    text: needMetadata ? "Download metadata" : "View on EX"
+                    onClicked: {
+                        menuDropdown.close()
+                        exAction(needMetadata)
+                    }
                 }
             }
         }
     }
 
+    Component {
+        id: bottomComponent
+        Item {
+            anchors.fill: parent
+            IconButton {
+                id: button
+                iconName: "awesome/ellipsis_v"
+                size: Units.dp(16)
+                anchors {
+                    right: parent.right
+                    verticalCenter: parent.verticalCenter
+                }
+
+                function openDropdown() {
+                    menuLoader.sourceComponent = menuComponent
+                    menuLoader.item.open(button, button.width, button.height)
+                }
+
+                Component.onCompleted: button.clicked.connect(
+                                           button.openDropdown)
+            }
+
+            StarRating {
+                id: starRating
+                currentRating: rating
+                anchors {
+                    left: parent.left
+                    verticalCenter: parent.verticalCenter
+                }
+            }
+
+            Component.onCompleted: {
+                starRating.starClicked.connect(updateRating)
+            }
+        }
+    }
 }

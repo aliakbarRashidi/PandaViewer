@@ -3,9 +3,8 @@ import QtQuick.Controls 1.3
 import QtQuick.Layouts 1.1
 import Material 0.1
 
-RowLayout {
+Row {
     id: layout
-    spacing: 0
     property real currentRating
     signal starClicked(real rating)
 
@@ -57,6 +56,7 @@ RowLayout {
                 model: [0, 1]
 
                 delegate: MouseArea {
+                    acceptedButtons: Qt.LeftButton | Qt.RightButton
                     property bool leftArea: modelData == 0
                     anchors {
                         top: parent.top
@@ -75,8 +75,13 @@ RowLayout {
                     }
                     onExited: starRepeater.currentStarValue = currentRating
                     onClicked: {
-                        mouse.accepted = true
-                        starClicked(starRepeater.currentStarValue)
+                        if (mouse.button & Qt.LeftButton) {
+                            mouse.accepted = true
+                            starClicked(starRepeater.currentStarValue)
+                        } else if (mouse.button & Qt.RightButton) {
+                            mouse.accepted = true
+                            starClicked(0)
+                        }
                     }
                 }
             }

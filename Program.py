@@ -13,35 +13,24 @@ from operator import attrgetter
 import sys
 import os
 import re
+import gc
 import json
 import logging
 import Threads
 import Exceptions
 import Database
-
-
-
-def resource_path(relative_path):
-    """ Get absolute path to resource, works for dev and for PyInstaller
-    http://stackoverflow.com/questions/7674790/bundling-data-files-with-pyinstaller-onefile
-    """
-    try:
-        # PyInstaller creates a temp folder and stores path in _MEIPASS
-        base_path = sys._MEIPASS
-    except Exception:
-        base_path = os.path.abspath(".")
-
-    return os.path.join(base_path, relative_path)
+from Gallery import Gallery
 
 
 class Program(QtWidgets.QApplication, Logger):
+
     PAGE_SIZE = 100
     BUG_PAGE = "https://github.com/seanegoodwin/pandaviewer/issues"
     CONFIG_DIR = os.path.expanduser("~/.lsv")
     THUMB_DIR = os.path.join(CONFIG_DIR, "thumbs")
     DEFAULT_CONFIG = {"dirs": [], "cookies": {"ipb_member_id": "",
                                               "ipb_pass_hash": ""}}
-    QML_PATH = resource_path("qml/")
+    QML_PATH = os.path.join(os.path.abspath("."), "qml/")
     MAX_TAG_RETURN_COUNT = 5
 
     class SortMap(object):
@@ -50,8 +39,13 @@ class Program(QtWidgets.QApplication, Logger):
         LastReadSort = 2
         RatingSort = 3
         DateAddedSort = 4
+        FilePathSort = 5
 
     def __init__(self, args):
+        """
+        :type pages list[list[Gallery]]
+        :type galleries list[Gallery]
+        """
         super(Program, self).__init__(args)
 
         self.tags = []
@@ -62,6 +56,13 @@ class Program(QtWidgets.QApplication, Logger):
         self.version = "0.1"  # Most likely used for db changes only
         self.page_number = 0
         self.search_text = ""
+
+        if not os.path.exists(self.THUMB_DIR):
+            os.makedirs(self.THUMB_DIR)
+        Database.setup()
+        self.load_config()
+
+        self.setAttribute(QtCore.Qt.AA_UseOpenGLES, True)
         self.addLibraryPath(self.QML_PATH)
         self.qml_engine = QtQml.QQmlApplicationEngine()
         self.qml_engine.addImportPath(self.QML_PATH)
@@ -69,7 +70,6 @@ class Program(QtWidgets.QApplication, Logger):
         self.qml_engine.load(os.path.join(self.QML_PATH, "main.qml"))
         self.app_window = self.qml_engine.rootObjects()[0]
         self.app_window.show()
-
         self.app_window.updateGalleryRating.connect(self.update_gallery_rating)
         self.app_window.askForTags.connect(self.get_tags_from_search)
         self.app_window.saveSettings.connect(self.update_config)
@@ -91,10 +91,6 @@ class Program(QtWidgets.QApplication, Logger):
         self.setup_completer()
         self.sort_type = self.SortMap.NameSort
         self.sort_mode_reversed = False
-        if not os.path.exists(self.THUMB_DIR):
-            os.makedirs(self.THUMB_DIR)
-        Database.setup()
-        self.load_config()
         self.setWindowIcon(QtGui.QIcon("icon.ico"))
         self.setup_threads()
 
@@ -114,7 +110,7 @@ class Program(QtWidgets.QApplication, Logger):
         self.search()
 
     def set_ui_gallery(self, gallery):
-        self.app_window.setUiGallery.emit(gallery.ui_uuid, gallery.get_json())
+        self.app_window.setGallery.emit(gallery.ui_uuid, gallery.get_json())
 
     def remove_gallery_by_uuid(self, uuid):
         gallery = self.get_gallery_by_uuid(uuid)
@@ -132,6 +128,10 @@ class Program(QtWidgets.QApplication, Logger):
         self.app_window.setTags(tags[:self.MAX_TAG_RETURN_COUNT])
 
     def get_gallery_by_uuid(self, uuid):
+        """
+        :return Matching gallery
+        :rtype Gallery
+        """
         assert uuid
         return next(g for g in self.current_page if g.ui_uuid == uuid)
 
@@ -160,6 +160,9 @@ class Program(QtWidgets.QApplication, Logger):
 
     @property
     def current_page(self):
+        """
+        :rtype list[Gallery]
+        """
         return self.pages[self.page_number]
 
     @property
@@ -221,7 +224,7 @@ class Program(QtWidgets.QApplication, Logger):
         self.logger.debug("Save config to db.")
         with Database.get_session(self) as session:
             db_config = session.query(Database.Config)[0]
-            db_config.json = unicode(json.dumps(self.config, ensure_ascii=False).encode("utf8"))
+            db_config.json = str(json.dumps(self.config, ensure_ascii=False))
             db_config.version = self.version
             session.add(db_config)
         self.sort()
@@ -235,8 +238,8 @@ class Program(QtWidgets.QApplication, Logger):
         self.save_config()
 
     def process_search(self, search_text):
-        quote_regex = re.compile(ur"(-)?\"(.*?)\"")
-        filter_regex = re.compile(ur"(?:^|\s)\-(.*?)(?=(?:$|\ ))")
+        quote_regex = re.compile(r"(-)?\"(.*?)\"")
+        filter_regex = re.compile(r"(?:^|\s)\-(.*?)(?=(?:$|\ ))")
         search_text = search_text.lower()
         rating = re.search(r"rating:(\S*)", search_text)
         if rating:
@@ -309,10 +312,7 @@ class Program(QtWidgets.QApplication, Logger):
         for gallery in self.filter_galleries(self.galleries):
             new_tags = list(set(map(lambda x: x.replace(" ", "_").lower(), gallery.tags)))
             for tag in new_tags:
-                if tag_count_map.get(tag):
-                    tag_count_map[tag] += 1
-                else:
-                    tag_count_map[tag] = 1
+                tag_count_map[tag] = tag_count_map.get(tag, 0) + 1
             tags += new_tags
         self.tags = list(set(tags))
         self.tags += list(map(lambda x: "-" + x, self.tags))
@@ -325,25 +325,33 @@ class Program(QtWidgets.QApplication, Logger):
         self.threads["gallery"].queue.put(None)
 
     def find_galleries_done(self, galleries):
+        self.app_window.setScanningMode(False)
         self.galleries += galleries
         self.logger.debug("Gallery thread done")
         self.setup_tags()
         self.sort()
 
     def send_page(self):
-        self.hide_page()
+        index_list = (i for i in range(0, self.PAGE_SIZE))
         for gallery in self.current_page:
-            if gallery.expired:
-                continue
-            self.app_window.addGallery.emit(gallery.get_json())
+            self.app_window.setUIGallery.emit(next(index_list), gallery.get_json())
+
+        [self.app_window.removeUIGallery.emit(i, 1) for i in list(index_list)[::-1]]
+
+        # index_list = list(index_list)
+        # if index_list:
+        #     self.app_window.removeUIGallery.emit(index_list[0], len(index_list))
+        gc.collect()
 
     def show_page(self):
-        self.hide_page()
         need_images = []
         for gallery in self.current_page:
             if not gallery.thumbnail_verified:
                 need_images.append(gallery)
-        self.generate_images(need_images)
+        if need_images:
+            self.generate_images(need_images)
+        else:
+            self.send_page()
 
     def hide_page(self):
         self.app_window.clearGalleries.emit()
@@ -388,7 +396,7 @@ class Program(QtWidgets.QApplication, Logger):
         self.app_window.setDuplicateScanMode(False)
         for key in duplicate_map:
             if len(duplicate_map[key]) > 1:
-                print duplicate_map[key][0]
+                print(duplicate_map[key][0])
 
     def close(self):
         for gallery in self.galleries:
@@ -407,6 +415,8 @@ class Program(QtWidgets.QApplication, Logger):
             key = attrgetter("read_count")
         elif self.sort_type == self.SortMap.DateAddedSort:
             key = attrgetter("time_added")
+        elif self.sort_type == self.SortMap.FilePathSort:
+            key = attrgetter("sort_path")
         self.galleries.sort(key=key, reverse=self.sort_mode_reversed)
         self.search()
 
@@ -424,6 +434,7 @@ class Program(QtWidgets.QApplication, Logger):
                 continue
             return_galleries.append(gallery)
         return return_galleries
+
 
     def setup_pages(self, galleries=None):
         if galleries is None:  # Need to do it this way because passing in galleries of [] would cause problems
@@ -452,15 +463,22 @@ class Program(QtWidgets.QApplication, Logger):
 
 
 if __name__ == "__main__":
-    reload(sys)
-    sys.setdefaultencoding("utf-8")
+    # reload(sys)
+    # sys.setdefaultencoding("utf-8")
     filename = strftime("%Y-%m-%d-%H.%M.%S") + ".log"
-    logging.basicConfig(level=logging.DEBUG,
-                        filename=filename,
-                        format="%(asctime)s: %(name)s %(levelname)s %(message)s")
+
+    logging.basicConfig(handlers=[logging.FileHandler(filename, 'w', 'utf-8')],
+                        format="%(asctime)s: %(name)s %(levelname)s %(message)s",
+                        level=logging.DEBUG)
+
+
+    # logging.basicConfig(level=logging.DEBUG,
+    #                     filename=filename,
+    #                     format="%(asctime)s: %(name)s %(levelname)s %(message)s")
     if os.name == "nt":
         import ctypes
         ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("lsv.ui")
+
     app = Program(sys.argv)
     sys.excepthook = app.exception_hook
     sys.exit(app.exec_())

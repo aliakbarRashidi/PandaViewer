@@ -14,7 +14,7 @@ class Search(Logger):
         banned_chars = ["=", "-", ":", "|", "~", "+", "]", "[", ",", ")", "("]
         pairs = [("{", "}"), ("(", ")"), ("[", "]")]
         if remove_enclosed:
-            regex = ur"\s*\%s[^%s]*\%s"
+            regex = r"\s*\%s[^%s]*\%s"
             for pair in pairs:
                 name = re.sub(regex % (pair[0], pair[0], pair[1]), "",  name)
         name = name.lstrip().lower()
@@ -53,7 +53,7 @@ class Search(Logger):
             intersection = [val for val in hash_search if val in title_search]
             if len(intersection) == 0:
                 cls.logger.info("No search intersection found, picking first hash result.")
-                return hash_search[0]
+                return hash_search[0] or title_search[0]
             elif len(intersection) > 1:
                 cls.logger.info("No definite gallery found, picking first insersection result")
             return intersection[0]

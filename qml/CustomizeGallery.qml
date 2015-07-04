@@ -20,12 +20,12 @@ Page {
     }
 
     Component.onCompleted: {
-        mainWindow.setUiGallery.connect(customizePage.setGallery)
+        mainWindow.setGallery.connect(customizePage.setGallery)
         galleryModel.append(gallery)
     }
 
     Component.onDestruction: {
-        mainWindow.setUiGallery.disconnect(customizePage.setGallery)
+        mainWindow.setGallery.disconnect(customizePage.setGallery)
     }
 
     actions: [
@@ -128,7 +128,6 @@ Page {
                 right: parent.right
             }
             placeholderText: "Custom Title"
-            floatingLabel: true
             text: title
 
             Component.onCompleted: cursorPosition = 0

@@ -6,13 +6,12 @@ from sqlalchemy.ext.declarative import declarative_base
 import os
 from threading import Lock
 from Logger import Logger
-from Program import resource_path
 
 CONFIG_DIR = os.path.expanduser("~/.lsv")
 DB_NAME = "db.sqlite"
 DATABASE_URI = "sqlite:///" + os.path.join(CONFIG_DIR, DB_NAME)
 DATABASE_FILE = os.path.join(CONFIG_DIR, DB_NAME)
-MIGRATE_REPO = resource_path("migrate_repo/")
+MIGRATE_REPO = os.path.join(os.path.abspath("."), "migrate_repo/")
 
 base = declarative_base()
 engine = sqlalchemy.create_engine(DATABASE_URI)

@@ -3,9 +3,11 @@
 from PyQt5 import QtCore
 from Logger import Logger
 import threading
-import Queue
+import queue
 import weakref
 import copy
+from collections import namedtuple
+from itertools import cycle
 import scandir
 import os
 import sys
@@ -22,11 +24,12 @@ from profilehooks import profile
 class BaseThread(threading.Thread, Logger):
     id = None
     dead = False
+    thread_count = 25
 
     def __init__(self, parent, **kwargs):
         super(BaseThread, self).__init__()
         self.daemon = True
-        self.queue = Queue.Queue()
+        self.queue = queue.Queue()
         self.parent = parent
         self.basesignals = self.BaseSignals()
         self.basesignals.exception.connect(self.parent.thread_exception_handler)
@@ -44,6 +47,26 @@ class BaseThread(threading.Thread, Logger):
 
     def _run(self):
         raise NotImplementedError
+
+    @staticmethod
+    def chunks(data, num_chunks):
+        chunks = [[] for i in range(0, num_chunks)]
+        index = cycle((i for i in range(0, num_chunks)))
+        for element in data:
+            chunks[next(index)].append(element)
+        return chunks
+
+    @classmethod
+    def generate_workers(cls, data, num_threads, target):
+        worker = namedtuple("worker", "thread data errors")
+        workers = []
+        split_data = cls.chunks(data, num_threads)
+        for data in split_data:
+            data_queue = queue.Queue()
+            error_queue = queue.Queue()
+            thread = threading.Thread(target=target, args=(data, data_queue, error_queue))
+            workers.append(worker(thread, data_queue, error_queue))
+        return workers
 
     def run(self):
         while True:
@@ -63,10 +86,8 @@ class BaseThread(threading.Thread, Logger):
                     try:
                         while True:
                             self.queue.get(False)
-                    except Queue.Empty:
+                    except queue.Empty:
                         pass
-
-
 
 
 class GalleryThread(BaseThread):
@@ -98,9 +119,8 @@ class GalleryThread(BaseThread):
     So I switched from the ORM to the core for these two intensive statements.
     """
 
-    @profile(sort="tottime")
     def load_from_db(self):
-        candidates = {"folder": [], "zip": [], "rar": []}
+        candidates = []
         with Database.get_session(self) as session:
             db_gallery_list = map(dict, session.execute(select([Database.Gallery])))
             db_metadata_list = map(dict, session.execute(select([Database.Metadata])))
@@ -132,18 +152,14 @@ class GalleryThread(BaseThread):
                 candidate = {"path": gallery["path"],
                              "parent": self.parent,
                              "json": gallery,
+                             "type": gallery["type"],
                              "loaded": True}
-                if gallery["type"] == Gallery.TypeMap.FolderGallery:
-                    candidates["folder"].append(candidate)
-                elif gallery["type"] == Gallery.TypeMap.ZipGallery:
-                    candidates["zip"].append(candidate)
-                elif gallery["type"] == Gallery.TypeMap.RarGallery:
-                    candidates["rar"].append(candidate)
+                candidates.append(candidate)
         self.create_from_dict(candidates)
         self.loaded = True
 
     def find_galleries(self):
-        candidates = {"folder": [], "zip": [], "rar": []}
+        candidates = []
         paths = map(os.path.normpath, map(os.path.expanduser,
                                           self.parent.dirs))
         for path in paths:
@@ -156,61 +172,75 @@ class GalleryThread(BaseThread):
                     elif ext in ZipGallery.ARCHIVE_EXTS + RarGallery.ARCHIVE_EXTS:
                         archive_file = os.path.join(base_folder, f)
                         if ext in ZipGallery.ARCHIVE_EXTS:
-                            type = "zip"
+                            type = Gallery.TypeMap.ZipGallery
                         elif ext in RarGallery.ARCHIVE_EXTS:
-                            type = "rar"
-                        candidates[type].append({"path": archive_file,
-                                                 "parent": self.parent})
+                            type = Gallery.TypeMap.RarGallery
+                        candidates.append({"path": archive_file,
+                                           "type": type,
+                                           "parent": self.parent})
                 if images:
-                    candidates["folder"].append({"path": base_folder,
-                                                 "parent": self.parent,
-                                                 "files": sorted(images, key=lambda f: f.lower())})
+                    candidates.append({"path": base_folder,
+                                       "parent": self.parent,
+                                       "type": Gallery.TypeMap.FolderGallery,
+                                       "files": sorted(images, key=lambda f: f.lower())})
         self.create_from_dict(candidates)
 
-    def create_from_dict(self, candidates, session=None):
-        invalid_files = []
+    def create_from_dict(self, candidates):
         galleries = []
         dead_galleries = []
-        gallery_candidates = []
-        for key in candidates:
-            gallery_candidates += candidates[key]
-        for gallery in gallery_candidates:
-            if gallery.get("path") in self.existing_paths:
-                continue
-            self.existing_paths.append(gallery.get("path"))
-            gallery_obj = None
-            try:
-                if gallery in candidates["zip"]:
-                    gallery_obj = ZipGallery(**gallery)
-                elif gallery in candidates["rar"]:
-                    gallery_obj = RarGallery(**gallery)
-                elif gallery in candidates["folder"]:
-                    gallery_obj = FolderGallery(**gallery)
-                galleries.append(gallery_obj)
-            except Exceptions.UnknownArchiveError:
-                gallery_obj = None
-                invalid_files.append(gallery.get("path"))
-            except AssertionError:
-                gallery_obj = None
-            except Exception:
-                gallery_obj = None
-                self.logger.error("%s gallery got unhandled exception" % gallery, exc_info=True)
-            if gallery.get("loaded"):
-                if not gallery_obj:  # TODO Awful hack please remove
-                    dead_galleries.append(gallery.get("id"))
-        self.signals.end.emit(galleries)
-        if invalid_files:
-            raise Exceptions.UnknownZipErrorMessage(invalid_files)
+        invalid_files = []
+        filtered_candidates = []
+        for candidate in candidates:
+            if candidate["path"] not in self.existing_paths:
+                filtered_candidates.append(candidate)
+                self.existing_paths.append(candidate["path"])
+
+        workers = self.generate_workers(filtered_candidates, self.thread_count, self.init_galleries)
+        [w.thread.start() for w in workers]
+        [w.thread.join() for w in workers]
+        for worker in workers:
+            galleries += worker.data.get(False)
+            errors = worker.errors.get(False)
+            dead_galleries += errors.dead_galleries
+            invalid_files += errors.invalid_files
         if dead_galleries:
             with Database.get_session(self) as session:
                 db_galleries = session.query(Database.Gallery).filter(Database.Gallery.id.in_(dead_galleries))
                 for db_gallery in db_galleries:
                     db_gallery.dead = True
                     session.add(db_gallery)
+        self.signals.end.emit(galleries)
+        if invalid_files:
+            raise Exceptions.UnknownZipErrorMessage(invalid_files)
+
+    def init_galleries(self, candidates, data_queue, error_queue):
+        galleries = []
+        invalid_files = []
+        dead_galleries = []
+
+        errors = namedtuple("errors", "invalid_files dead_galleries")
+        for candidate in candidates:
+            try:
+                gallery_obj = Gallery.get_class_from_type(candidate["type"])(**candidate)
+                galleries.append(gallery_obj)
+            except Exceptions.UnknownArchiveError:
+                gallery_obj = None
+                invalid_files.append(candidate["path"])
+            except AssertionError:
+                gallery_obj = None
+            except Exception:
+                gallery_obj = None
+                self.logger.error("%s gallery got unhandled exception" % candidate, exc_info=True)
+            if candidate.get("loaded") and not gallery_obj:
+                dead_galleries.append(candidate["id"])
+        data_queue.put(galleries)
+        error_queue.put(errors(invalid_files, dead_galleries))
+
 
 
 class ImageThread(BaseThread):
     EMIT_FREQ = 5
+    thread_count = 10
     id = "image"
 
     def __init__(self, parent, **kwargs):
@@ -229,15 +259,14 @@ class ImageThread(BaseThread):
             self.generate_images(galleries)
 
     def generate_images(self, galleries):
-        for gallery in galleries:
-            if gallery.expired:
-                continue
-            if not gallery.thumbnail_verified:
-                try:
-                    gallery.load_thumbnail()
-                    #self.signals.gallery.emit(gallery)
-                except Exception:
-                    self.logger.error("%s gallery failed to get image" % gallery, exc_info=True)
+        """
+        @:type galleries list[Gallery]
+        """
+        galleries = [g for g in galleries if not g.expired]
+
+        workers = self.generate_workers(galleries, self.thread_count, self.generate_image)
+        [w.thread.start() for w in workers]
+        [w.thread.join() for w in workers]
         self.signals.end.emit()
         with Database.get_session(self) as session:
             dead_galleries = session.query(Database.Gallery).filter(Database.Gallery.dead == True)
@@ -247,6 +276,13 @@ class ImageThread(BaseThread):
                         os.remove(gallery.thumbnail_path)
                     except OSError:
                         pass
+
+    def generate_image(self, galleries, data_queue, error_queue):
+        for gallery in galleries:
+            try:
+                gallery.load_thumbnail()
+            except Exception:
+                self.logger.error("Gallery failed to get image", exc_info=True)
 
 
 class SearchThread(BaseThread):
@@ -277,6 +313,10 @@ class SearchThread(BaseThread):
                 self.signals.end.emit()
 
     def search(self, galleries):
+        """
+        :type galleries list[Gallery]
+        :return: None
+        """
         search_galleries = [g for g in galleries if
                             g.gid is None and g.expired is False]
         self.logger.debug("Search galleries: %s" % [g.name for g in search_galleries])

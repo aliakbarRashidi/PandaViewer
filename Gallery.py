@@ -10,7 +10,6 @@ import shutil
 import Exceptions
 import zipfile
 import rarfile
-import scandir
 import tempfile
 import Database
 from contextlib import contextmanager
@@ -26,7 +25,7 @@ from send2trash import send2trash
 
 
 class Gallery(GalleryBoilerplate):
-    IMAGE_EXTS = [".png", ".jpg", ".jpeg"]
+    IMAGE_EXTS = (".png", ".jpg", ".jpeg")
     HASH_SIZE = 8192
     IMAGE_WIDTH = 200
     MAX_TOOLTIP_LENGTH = 80
@@ -55,12 +54,12 @@ class Gallery(GalleryBoilerplate):
         ZipGallery = 1
         RarGallery = 2
 
+
     def __repr__(self):
         return self.name or super(self, Gallery).__repr__()
 
     def __init__(self, **kwargs):
         self.ui_uuid = str(uuid1())
-        self.type = getattr(self.TypeMap, self.__class__.__name__)
         self.lock = Lock()
         self.metadata = {}
         self.parent = kwargs.get("parent", self)
@@ -73,6 +72,15 @@ class Gallery(GalleryBoilerplate):
     def __del__(self):
         if self.expired:
             self.delete()
+
+    @classmethod
+    def get_class_from_type(cls, type):
+        if type == cls.TypeMap.FolderGallery:
+            return FolderGallery
+        elif type == cls.TypeMap.ZipGallery:
+            return ZipGallery
+        elif type == cls.TypeMap.RarGallery:
+            return RarGallery
 
     def save_customization(self, ui_gallery): #TODO abstract all of this out for easier use with more sites
         ctags = ui_gallery.property("tags").toString()
@@ -96,6 +104,8 @@ class Gallery(GalleryBoilerplate):
             elif self.id != old_id:
                 self.force_metadata = True
                 self.get_metadata()
+        elif exurl != self.ex_url and exurl == "":
+            self.delete_dbmetadata("gmetadata")
         self.parent.setup_tags()
         self.save_metadata()
         self.update_ui_gallery()
@@ -105,7 +115,7 @@ class Gallery(GalleryBoilerplate):
         thumbnail_path = self.thumbnail_path or ""
         tags = ", ".join(self.ctags)
         exTags = ", ".join(self.extags)
-        ex_url= self.generate_ex_url() if self.gid else ""
+        ex_url= self.ex_url if self.gid else ""
         return {"title": self.title,
                 "rating": float(self.rating),
                 "tooltip": tooltip,
@@ -147,6 +157,10 @@ class Gallery(GalleryBoilerplate):
         return Search.clean_title(self.title)
 
     @property
+    def sort_path(self):
+        raise NotImplementedError
+
+    @property
     def clean_name(self):
         return Search.clean_title(self.title, remove_enclosed=False)
 
@@ -155,7 +169,11 @@ class Gallery(GalleryBoilerplate):
         return float(self.rating or 0)
 
     def set_rating(self, rating):
-        self.crating = str(rating)
+        rating = str(rating)
+        if rating == "0.0":
+            self.crating = ""
+        else:
+            self.crating = str(rating)
         self.save_metadata()
 
     def find_in_db(self):
@@ -177,7 +195,7 @@ class Gallery(GalleryBoilerplate):
                         Database.Gallery.uuid == uuid
                         ))))
                 if dead_gallery:
-                    self.db_uuid = dead_gallery[0]["uuid"]
+                    self.db_uuid = uuid
         if self.db_uuid:
             with Database.get_session(self) as session:
                 gallery = list(map(dict, session.execute(
@@ -241,8 +259,11 @@ class Gallery(GalleryBoilerplate):
     def delete_dbmetadata(self, metadata):
         with Database.get_session(self) as session:
             db_gallery = session.query(Database.Gallery).filter(Database.Gallery.id == self.db_id)[0]
-            db_metadata = db_gallery.metadata_collection[metadata]
-            session.delete(db_metadata)
+            for db_metadata in db_gallery.metadata_collection:
+                if db_metadata.name == metadata:
+                    session.delete(db_metadata)
+                    self.metadata.pop(metadata, None)
+                    return
 
     def load_metadata(self):
         with Database.get_session(self) as session:
@@ -300,7 +321,8 @@ class Gallery(GalleryBoilerplate):
                     session.add(db_metadata)
                     session.add(db_gallery)
                 db_metadata.name = name
-                db_metadata.json = unicode(json.dumps(self.metadata[name], ensure_ascii=False).encode("utf8"))
+                #db_metadata.json = str(json.dumps(self.metadata[name], ensure_ascii=False).encode("utf8"))
+                db_metadata.json = str(json.dumps(self.metadata[name], ensure_ascii=False))
                 session.commit()  # Have to run this on each iteration in case a new metadata table was created
             db_gallery.thumbnail_path = self.thumbnail_path
             db_gallery.image_hash = self.image_hash
@@ -354,14 +376,15 @@ class Gallery(GalleryBoilerplate):
                         for key in metadata}
         elif isinstance(metadata, list):
             metadata = [self.clean_metadata(val) for val in metadata]
-        elif isinstance(metadata, unicode):
+        elif isinstance(metadata, str):
             metadata = re.sub("&#039;", "'", metadata)
             metadata = re.sub("&quot;", "\"", metadata)
             metadata = re.sub("(&amp;)", "&", metadata)
             #metadata = re.sub("&#(\d+)(;|(?=\s))", "", metadata)
         return metadata
 
-    def generate_ex_url(self):
+    @property
+    def ex_url(self):
         return self.BASE_EX_URL % (self.gid, self.token)
 
     @classmethod
@@ -418,7 +441,7 @@ class Gallery(GalleryBoilerplate):
         QtGui.QDesktopServices.openUrl(QtCore.QUrl.fromLocalFile(self.files[0]))
 
     def open_on_ex(self):
-        QtGui.QDesktopServices.openUrl(QtCore.QUrl(self.generate_ex_url()))
+        QtGui.QDesktopServices.openUrl(QtCore.QUrl(self.ex_url))
 
     def open_folder(self):
         QtGui.QDesktopServices.openUrl(QtCore.QUrl.fromLocalFile(self.path))
@@ -444,11 +467,12 @@ class Gallery(GalleryBoilerplate):
             files = self.raw_files
         else:
             files = self.files
-        return hashlib.sha1(self.generate_image_hash() + str(len(files))).hexdigest()
+        return str(hashlib.sha1((self.generate_image_hash() + str(len(files))).encode("utf8")).hexdigest())
 
 
 class FolderGallery(Gallery):
     files = None
+    type = Gallery.TypeMap.FolderGallery
 
     def __init__(self, **kwargs):
         self.path = os.path.normpath(kwargs.get("path"))
@@ -461,6 +485,10 @@ class FolderGallery(Gallery):
     @property
     def file_count(self):
         return len(self.files)
+
+    @property
+    def sort_path(self):
+        return self.path
 
     def get_image(self):
         image = QtGui.QImageReader()
@@ -477,7 +505,7 @@ class FolderGallery(Gallery):
         except IOError:
             db_file = open(self.db_file, "wb")
         try:
-            db_file.write(self.db_uuid)
+            db_file.write(bytes(self.db_uuid, "UTF-8"))
             db_file.truncate()
         finally:
             db_file.close()
@@ -494,7 +522,8 @@ class FolderGallery(Gallery):
     def validate_db_uuid(self, db_uuid):
         db_id = None
         with Database.get_session(self) as session:
-            db_gallery = session.query(Database.Gallery).filter(Database.Gallery.uuid == db_uuid, Database.Gallery.dead == True)
+            db_gallery = session.query(Database.Gallery).filter(
+                Database.Gallery.uuid == db_uuid, Database.Gallery.dead == True)
             assert db_gallery.count() == 1
             db_gallery[0].dead = False
             session.add(db_gallery[0])
@@ -506,9 +535,9 @@ class FolderGallery(Gallery):
             return self.generate_hash(image)
 
     def find_files(self, find_all=False):
-        files = []
         found_files = []
-        files = sorted(list(map(lambda x: os.path.join(self.path, x), listdir(self.path))), key=lambda f: f.lower())
+        files = sorted(list(map(lambda x: os.path.join(self.path, x), listdir(self.path))),
+                       key=lambda f: f.lower())
         for f in files:
             path = os.path.join(self.path, f)
             if os.path.isfile(path) and splitext(path)[-1].lower() in self.IMAGE_EXTS:
@@ -553,6 +582,10 @@ class ArchiveGallery(Gallery):
                 shutil.rmtree(self.temp_dir)
             except Exception:
                 self.logger.warning("Failed to delete tempdir", exc_info=True)
+
+    @property
+    def sort_path(self):
+        return self.archive_file
 
     @property
     @contextmanager
@@ -621,11 +654,13 @@ class ArchiveGallery(Gallery):
 
 
 class ZipGallery(ArchiveGallery):
-    ARCHIVE_EXTS = [".zip", ".cbz"]
+    ARCHIVE_EXTS = (".zip", ".cbz")
     archive_class = zipfile.ZipFile
+    type = Gallery.TypeMap.ZipGallery
 
 
 class RarGallery(ArchiveGallery):
-    ARCHIVE_EXTS = [".rar", ".cbr"]
+    ARCHIVE_EXTS = (".rar", ".cbr")
     archive_class = rarfile.RarFile
+    type = Gallery.TypeMap.RarGallery
 
