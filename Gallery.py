@@ -48,6 +48,7 @@ class Gallery(GalleryBoilerplate):
     expired = False
     path = None
     all_files_loaded = False
+    type = None
 
     class TypeMap(object):
         FolderGallery = 0
@@ -94,8 +95,9 @@ class Gallery(GalleryBoilerplate):
 
         self.extags = list(map(lambda x: x.replace(" ", "_"),
                                filter(None, map(lambda x: re.sub("^\s+", "", x), extags.split(",")))))
-        if ctitle != (self.ctitle or self.name):
-            self.ctitle = ctitle
+        self.ctitle = ctitle
+        if self.ctitle in (self.extitle, self.name):
+            self.ctitle = ""
         if exurl:
             old_id = self.id
             self.id = Gallery.process_ex_url(exurl)
@@ -185,22 +187,16 @@ class Gallery(GalleryBoilerplate):
             except Exception:
                 self.logger.warning("DB UUID file invalid.", exc_info=True)
                 self.delete_db_file()
-        if isinstance(self, ArchiveGallery):
-            with Database.get_session(self) as session:
-                uuid = self.generate_uuid()
-                dead_gallery = list(map(dict, session.execute(
-                    select([Database.Gallery]).where(
-                        Database.Gallery.dead == True).where(
-                        Database.Gallery.type == self.TypeMap.ZipGallery).where(
-                        Database.Gallery.uuid == uuid
-                        ))))
-                if dead_gallery:
-                    self.db_uuid = uuid
+        elif isinstance(self, ArchiveGallery):
+            self.db_uuid = self.generate_uuid()
         if self.db_uuid:
             with Database.get_session(self) as session:
                 gallery = list(map(dict, session.execute(
                     select([Database.Gallery]).where(
-                        Database.Gallery.uuid == self.db_uuid))))
+                        Database.Gallery.uuid == self.db_uuid).where(
+                        Database.Gallery.type == self.type).where(
+                        Database.Gallery.dead == True
+                    ))))
                 if gallery:
                     self.db_id = gallery[0]["id"]
                     if isinstance(self, ArchiveGallery):
@@ -245,7 +241,6 @@ class Gallery(GalleryBoilerplate):
         try:
             self.lock.acquire()
             self.delete_from_db()
-            self.delete_thumbnail()
         finally:
             self.lock.release()
 
@@ -413,8 +408,6 @@ class Gallery(GalleryBoilerplate):
         return image.scaledToWidth(self.IMAGE_WIDTH, QtCore.Qt.SmoothTransformation)
 
     def verify_hash(self, image_hash):
-        if self.image_hash != image_hash:
-            self.delete_thumbnail()
         return self.image_hash == image_hash
 
     def load_thumbnail(self):
@@ -425,6 +418,7 @@ class Gallery(GalleryBoilerplate):
             image = self.resize_image()
             self.logger.debug("Saving new thumbnail")
             assert image.save(self.thumbnail_path, "JPG")
+            assert os.path.exists(self.thumbnail_path)
             self.save_metadata()
         self.thumbnail_verified = True
 
@@ -513,22 +507,17 @@ class FolderGallery(Gallery):
     def load_db_file(self):
         self.logger.debug("Loading DB UUID file.")
         db_file = open(self.db_file, "rb")
-        db_uuid = str(db_file.read())
+        db_uuid = db_file.read().decode("utf8")
         self.logger.info("DB UUID loaded from file: %s" % db_uuid)
         db_file.close()
-        db_uuid = self.validate_db_uuid(db_uuid)
+        self.validate_db_uuid(db_uuid)
         return db_uuid
 
     def validate_db_uuid(self, db_uuid):
-        db_id = None
         with Database.get_session(self) as session:
             db_gallery = session.query(Database.Gallery).filter(
                 Database.Gallery.uuid == db_uuid, Database.Gallery.dead == True)
             assert db_gallery.count() == 1
-            db_gallery[0].dead = False
-            session.add(db_gallery[0])
-            db_id = db_gallery[0].id
-        return db_id
 
     def generate_image_hash(self):
         with open(self.files[0], "rb") as image:

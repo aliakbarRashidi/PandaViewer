@@ -268,14 +268,6 @@ class ImageThread(BaseThread):
         [w.thread.start() for w in workers]
         [w.thread.join() for w in workers]
         self.signals.end.emit()
-        with Database.get_session(self) as session:
-            dead_galleries = session.query(Database.Gallery).filter(Database.Gallery.dead == True)
-            for gallery in dead_galleries:
-                if gallery.thumbnail_path:
-                    try:
-                        os.remove(gallery.thumbnail_path)
-                    except OSError:
-                        pass
 
     def generate_image(self, galleries, data_queue, error_queue):
         for gallery in galleries:
