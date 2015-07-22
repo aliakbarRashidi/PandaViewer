@@ -62,14 +62,12 @@ class Program(QtWidgets.QApplication, Logger):
         Database.setup()
         self.load_config()
 
-        self.setAttribute(QtCore.Qt.AA_UseOpenGLES, True)
         self.addLibraryPath(self.QML_PATH)
         self.qml_engine = QtQml.QQmlApplicationEngine()
         self.qml_engine.addImportPath(self.QML_PATH)
         self.qml_engine.addPluginPath(self.QML_PATH)
         self.qml_engine.load(os.path.join(self.QML_PATH, "main.qml"))
         self.app_window = self.qml_engine.rootObjects()[0]
-        self.app_window.show()
         self.app_window.updateGalleryRating.connect(self.update_gallery_rating)
         self.app_window.askForTags.connect(self.get_tags_from_search)
         self.app_window.saveSettings.connect(self.update_config)
@@ -85,13 +83,14 @@ class Program(QtWidgets.QApplication, Logger):
         self.app_window.openOnEx.connect(self.open_on_ex)
         self.app_window.saveGallery.connect(self.save_gallery_customization)
         self.app_window.searchForDuplicates.connect(self.generate_duplicate_map)
+        self.app_window.closedUI.connect(self.close)
 
+        self.app_window.setUISort.emit(self.sort_type, 1 if self.sort_mode_reversed else 0)
         self.completer_line = QtWidgets.QLineEdit()
         self.completer_line.hide()
         self.setup_completer()
-        self.sort_type = self.SortMap.NameSort
-        self.sort_mode_reversed = False
         self.setWindowIcon(QtGui.QIcon("icon.ico"))
+        self.app_window.show()
         self.setup_threads()
 
     def setup_completer(self):
@@ -103,6 +102,7 @@ class Program(QtWidgets.QApplication, Logger):
     def set_sorting(self, sort_type, reversed):
         self.sort_type = sort_type
         self.sort_mode_reversed = reversed
+        self.save_config()
         self.sort()
 
     def update_search(self, search_text):
@@ -129,7 +129,6 @@ class Program(QtWidgets.QApplication, Logger):
 
     def get_gallery_by_uuid(self, uuid):
         """
-        :return Matching gallery
         :rtype Gallery
         """
         assert uuid
@@ -157,6 +156,23 @@ class Program(QtWidgets.QApplication, Logger):
     def exec_(self):
         self.find_galleries(initial=True)
         return super(Program, self).exec_()
+
+    @property
+    def sort_type(self):
+         return self.config.get("sort_type", self.SortMap.NameSort)
+
+    @sort_type.setter
+    def sort_type(self, val):
+         self.config["sort_type"] = val
+
+    @property
+    def sort_mode_reversed(self):
+        return self.config.get("sort_mode_reversed", False)
+
+    @sort_mode_reversed.setter
+    def sort_mode_reversed(self, val):
+        self.config["sort_mode_reversed"] = val
+
 
     @property
     def current_page(self):
@@ -315,6 +331,12 @@ class Program(QtWidgets.QApplication, Logger):
                 tag_count_map[tag] = tag_count_map.get(tag, 0) + 1
             tags += new_tags
         self.tags = list(set(tags))
+
+        namespace_match = re.compile(r":(.*)")
+        for tag in self.tags[:]:
+            raw_tag = re.search(namespace_match, tag)
+            if raw_tag:
+                self.tags.append(raw_tag.groups()[0])
         self.tags += list(map(lambda x: "-" + x, self.tags))
         self.tags.sort()
         self.setup_completer()
@@ -371,7 +393,9 @@ class Program(QtWidgets.QApplication, Logger):
             assert uuid == -1
             galleries = self.filter_galleries(self.galleries)
         except (ValueError, TypeError):
-            galleries = [self.get_gallery_by_uuid(uuid)]
+            gallery = self.get_gallery_by_uuid(uuid)
+            gallery.force_metadata = True
+            galleries = [gallery]
         self.logger.debug("Starting metadata thread")
         self.app_window.setSearchMode(True)
         self.threads["metadata"].queue.put(galleries)
@@ -399,8 +423,7 @@ class Program(QtWidgets.QApplication, Logger):
                 print(duplicate_map[key][0])
 
     def close(self):
-        for gallery in self.galleries:
-            gallery.__del__()
+        [g.__del__() for g in self.galleries]
         self.quit()
 
     def sort(self):
@@ -417,6 +440,7 @@ class Program(QtWidgets.QApplication, Logger):
             key = attrgetter("time_added")
         elif self.sort_type == self.SortMap.FilePathSort:
             key = attrgetter("sort_path")
+        assert key
         self.galleries.sort(key=key, reverse=self.sort_mode_reversed)
         self.search()
 
@@ -434,7 +458,6 @@ class Program(QtWidgets.QApplication, Logger):
                 continue
             return_galleries.append(gallery)
         return return_galleries
-
 
     def setup_pages(self, galleries=None):
         if galleries is None:  # Need to do it this way because passing in galleries of [] would cause problems
@@ -463,21 +486,15 @@ class Program(QtWidgets.QApplication, Logger):
 
 
 if __name__ == "__main__":
-    # reload(sys)
-    # sys.setdefaultencoding("utf-8")
     filename = strftime("%Y-%m-%d-%H.%M.%S") + ".log"
 
     logging.basicConfig(handlers=[logging.FileHandler(filename, 'w', 'utf-8')],
                         format="%(asctime)s: %(name)s %(levelname)s %(message)s",
                         level=logging.DEBUG)
 
-
-    # logging.basicConfig(level=logging.DEBUG,
-    #                     filename=filename,
-    #                     format="%(asctime)s: %(name)s %(levelname)s %(message)s")
     if os.name == "nt":
         import ctypes
-        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("lsv.ui")
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("pv.ui")
 
     app = Program(sys.argv)
     sys.excepthook = app.exception_hook

@@ -19,7 +19,13 @@ ApplicationWindow {
     property bool scanningModeOn: false
     property bool searchModeOn: false
     property bool duplicateScanOn: false
-    width: Units.dp(16 * 5) + Units.dp(200 * 4) + Units.dp(1)
+    width: Units.dp(16 * 5) + Units.dp(200 * 4) + Units.dp(1) + Units.dp(16)
+
+    onClosing: {
+        closedUI()
+        close.accepted = false
+    }
+    Component.onDestruction: closedUI()
 
     signal scanningModeSet(var mode)
     function setScanningMode(val) {
@@ -55,7 +61,6 @@ ApplicationWindow {
     signal saveSettings(var settings)
     signal askForSettings
     signal setSettings(var settings)
-    signal addAndClearGalleries(var galleries)
     signal removeGallery(string uuid)
     signal openGallery(string uuid)
     signal openGalleryFolder(string uuid)
@@ -71,13 +76,14 @@ ApplicationWindow {
 
     signal pageChange(int page)
 
-
     signal setUIGallery(int index, var gallery)
     signal setUIGalleries(var galleries)
     signal removeUIGallery(int index, int count)
+    signal setUISort(int sortType, int reversed)
+
+    signal closedUI
 
     function setTags(tags) {
-
         for (var i = 0; i < tags.length; ++i) {
             matchingTags.append({
                                     tag: tags[i]
@@ -132,7 +138,6 @@ ApplicationWindow {
         tabs: []
         actionBar.maxActionCount: 6
 
-
         actionBar.extendedContent: Rectangle {
             id: searchContainer
             visible: false
@@ -184,8 +189,8 @@ ApplicationWindow {
                         var nextSpace = searchText.text.indexOf(
                                     " ", searchText.cursorPosition)
                         searchContainer.end = nextSpace == -1 ? searchText.text.length : nextSpace
-                        var substr = searchText.text.substring(0,
-                                                               searchContainer.end)
+                        var substr = searchText.text.substring(
+                                    0, searchContainer.end)
                         searchContainer.start = substr.lastIndexOf(" ")
                         searchContainer.start = searchContainer.start
                                 == 0 ? searchContainer.start : searchContainer.start + 1
@@ -199,7 +204,7 @@ ApplicationWindow {
                             addTag()
                             autoCompleteDropdown.close()
                         } else {
-                           searchContainer.accecpt()
+                            searchContainer.accecpt()
                         }
                     }
 
@@ -231,52 +236,44 @@ ApplicationWindow {
                     Keys.onUpPressed: autoCompleteDropdown.view.decrementCurrentIndex()
                 }
 
+                Dropdown {
+                    id: autoCompleteDropdown
+                    property alias view: listView
+                    width: searchText.width
+                    height: listView.height
 
-        Dropdown {
-            id: autoCompleteDropdown
-            property alias view: listView
-            width: searchText.width
-            height: listView.height
+                    ListView {
+                        id: listView
+                        anchors {
+                            left: parent.left
+                            right: parent.right
+                            top: parent.top
+                        }
+                        spacing: Units.dp(4)
 
-            ListView {
-                id: listView
-                anchors {
-                    left: parent.left
-                    right: parent.right
-                    top: parent.top
-                }
-                spacing: Units.dp(4)
+                        height: contentHeight
+                        keyNavigationWraps: true
+                        model: matchingTags
 
-                height: contentHeight
-                keyNavigationWraps: true
-                model: matchingTags
-
-                delegate: ListItem.Standard {
-                    id: item
-                    text: tag
-                    height: Units.dp(24)
-                    selected: listView.currentItem == item
-                    MouseArea {
-                        anchors.fill: parent
-                        hoverEnabled: true
-                        onEntered: listView.currentIndex = index
-                        onPositionChanged: listView.currentIndex = index
-                        onClicked: {
-                            searchText.addTag()
-                            autoCompleteDropdown.close()
+                        delegate: ListItem.Standard {
+                            id: item
+                            text: tag
+                            height: Units.dp(24)
+                            selected: listView.currentItem == item
+                            MouseArea {
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                onEntered: listView.currentIndex = index
+                                onPositionChanged: listView.currentIndex = index
+                                onClicked: {
+                                    searchText.addTag()
+                                    autoCompleteDropdown.close()
+                                }
+                            }
                         }
                     }
                 }
             }
-        }
-
-
-
-
-
-
-            }
-
         }
 
         actions: [
@@ -347,7 +344,6 @@ ApplicationWindow {
             }
         ]
 
-
         TabView {
             id: tabView
             anchors.fill: parent
@@ -380,10 +376,12 @@ ApplicationWindow {
                             acceptedButtons: Qt.ForwardButton | Qt.BackButton
                             onClicked: {
                                 mouse.accepted = true
-                                if (mouse.button == Qt.ForwardButton && page.actionBar.enabled
+                                if (mouse.button == Qt.ForwardButton
+                                        && page.actionBar.enabled
                                         && forwardsPageAction.enabled) {
                                     pageChange(currentPage + 1)
-                                } else if (mouse.button == Qt.BackButton && page.actionBar.enabled
+                                } else if (mouse.button == Qt.BackButton
+                                           && page.actionBar.enabled
                                            && backPageAction.enabled) {
                                     pageChange(currentPage - 1)
                                 }
@@ -462,10 +460,11 @@ ApplicationWindow {
 
         Keys.onEscapePressed: accepted()
         onRejected: accepted()
+        dismissOnTap: false
 
         onAccepted: {
             if (fatal) {
-                Qt.quit()
+                mainWindow.close()
             }
 
             close()
@@ -509,12 +508,17 @@ ApplicationWindow {
         title: "Sort by"
         positiveButtonText: "Sort"
 
+        Component.onCompleted: {
+            mainWindow.setUISort.connect(sortGrid.setUISort)
+        }
+
         onAccepted: {
             setSortMethod(sortType.current.sortValue,
                           sortMode.current.sortValue)
         }
 
         Grid {
+            id: sortGrid
             ExclusiveGroup {
                 id: sortType
             }
@@ -522,9 +526,27 @@ ApplicationWindow {
             ExclusiveGroup {
                 id: sortMode
             }
-            Column {
 
+            function setUISort(sortType, sortMode) {
+                for (var i = 0; i < typeRepeater.model.length; ++i) {
+                    if (i === sortType) {
+                        typeRepeater.itemAt(i).checked = true
+                        break
+                    }
+
+                }
+                for (var i = 0; i < modeRepeater.model.length; ++i) {
+                    if (i === sortMode) {
+                        modeRepeater.itemAt(i).checked = true
+                        break
+                    }
+
+                }
+            }
+
+            Column {
                 Repeater {
+                    id: typeRepeater
                     model: [["Name", 0], ["Read Count", 1], ["Last Read", 2], ["Rating", 3], ["Date Added", 4], ["File Path", 5]]
 
                     delegate: RadioButton {
@@ -538,6 +560,7 @@ ApplicationWindow {
 
             Column {
                 Repeater {
+                    id: modeRepeater
                     model: [["Ascending", 0], ["Descending", 1]]
 
                     delegate: RadioButton {

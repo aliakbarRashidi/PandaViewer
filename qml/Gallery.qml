@@ -52,14 +52,6 @@ Card {
         mainWindow.openGalleryFolder(dbUUID)
     }
 
-    function exAction(needMetadata) {
-        if (needMetadata) {
-            mainWindow.metadataSearch(dbUUID)
-        } else {
-            mainWindow.openOnEx(dbUUID)
-        }
-    }
-
     Label {
         id: titleText
         anchors {
@@ -172,11 +164,19 @@ Card {
                 }
 
                 ListItem.Standard {
-                    property bool needMetadata: !hasMetadata
-                    text: needMetadata ? "Download metadata" : "View on EX"
+                    text: "Download metadata"
                     onClicked: {
                         menuDropdown.close()
-                        exAction(needMetadata)
+                        mainWindow.metadataSearch(dbUUID)
+                    }
+                }
+
+                ListItem.Standard {
+                    visible: hasMetadata
+                    text: "View on EX"
+                    onClicked: {
+                        menuDropdown.close()
+                        mainWindow.openOnEx(dbUUID)
                     }
                 }
             }

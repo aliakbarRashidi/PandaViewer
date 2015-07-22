@@ -21,13 +21,13 @@ Item {
             Loader {
                 visible: status == Loader.Ready
                 sourceComponent: Component {
-                    Gallery{}
+                    Gallery {
+                    }
                 }
                 asynchronous: index >= 50
             }
         }
     }
-
 
     ProgressCircle {
         id: progressCircle
@@ -61,14 +61,16 @@ Item {
     }
 
     function setUIGallery(index, gallery) {
-        galleryContent.positionViewAtBeginning()
+        grid.positionViewAtBeginning()
         galleryModel.set(index, gallery)
-//        delegateModel.items.addGroups(index, 1, "visible")
+        //        delegateModel.items.addGroups(index, 1, "visible")
     }
 
     function removeUIGallery(index, count) {
-//        delegateModel.items.removeGroups(index, count, "visible")
-        galleryModel.remove(index)
+        //        delegateModel.items.removeGroups(index, count, "visible")
+        if (index < galleryModel.count) {
+            galleryModel.remove(index)
+        }
     }
 
     function setNoSearchResults(noResults) {
@@ -191,49 +193,53 @@ Item {
         }
     }
 
-    GridView {
+    ScrollView {
+        anchors.fill: parent
+        __wheelAreaScrollSpeed: 75
         id: galleryContent
-        focus: true
-        boundsBehavior: Flickable.DragOverBounds
-        anchors {
-            top: parent.top
-            bottom: parent.bottom
-            right: parent.right
-            left: parent.left
-            topMargin: Units.dp(16)
-            leftMargin: Units.dp(16)
+
+        GridView {
+            id: grid
+            anchors {
+                top: parent.top
+                bottom: parent.bottom
+                right: parent.right
+                left: parent.left
+                topMargin: Units.dp(16)
+                leftMargin: Units.dp(16)
+            }
+            focus: true
+            boundsBehavior: Flickable.DragOverBounds
+            //width: parent.width
+
+            //        columns: parseInt(content.width / Units.dp(200 + 16)) || 1
+            //        rowSpacing: 0
+            //        columnSpacing: 0
+            cellWidth: Units.dp(200 + 16)
+            cellHeight: Units.dp(350 + 16 + 16)
+
+            model: delegateModel
+            cacheBuffer: Units.dp((350 + 16) * 100)
+
+            //        delegate: Component {
+            //            Gallery {
+            //                id: gallery
+            //            }
+            //        }
+
+            //        Repeater {
+            //            id: galleryRepeater
+            //            model: galleryModel
+            //            delegate: Component {
+            //                Gallery {
+            //                id: gallery
+            //            }
+            //        }
+            //    }
         }
-
-        //width: parent.width
-
-        //        columns: parseInt(content.width / Units.dp(200 + 16)) || 1
-        //        rowSpacing: 0
-        //        columnSpacing: 0
-        cellWidth: Units.dp(200 + 16)
-        cellHeight: Units.dp(350 + 16 + 16)
-
-        model: delegateModel
-        cacheBuffer: Units.dp((350 + 16) * 100)
-
-//        delegate: Component {
-//            Gallery {
-//                id: gallery
-//            }
-//        }
-
-        //        Repeater {
-        //            id: galleryRepeater
-        //            model: galleryModel
-        //            delegate: Component {
-        //                Gallery {
-        //                id: gallery
-        //            }
-        //        }
-        //    }
     }
+    //    Scrollbar {
+    //        flickableItem: galleryContent
 
-    Scrollbar {
-        flickableItem: galleryContent
-
-    }
+    //    }
 }

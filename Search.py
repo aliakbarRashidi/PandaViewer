@@ -28,35 +28,46 @@ class Search(Logger):
         cls.name = gallery.title  # For logging
         sha_hash = gallery.image_hash or gallery.generate_image_hash()
         hash_search = cls._search(sha_hash=sha_hash)
-        cls.logger.info("Hash search results: %s" % hash_search)
+        cls.logger.info("Cover hash search results: %s" % hash_search)
         if len(hash_search) == 1:
             return hash_search[0]
-        all_pages_hash = cls._search(sha_hash=sha_hash, title_only=0)
+        all_pages_hash = cls._search(sha_hash=sha_hash, cover_only=0)
         cls.logger.info("All pages hash results: %s" % all_pages_hash)
         if len(all_pages_hash) == 1:
             return all_pages_hash[0]
-        else:
-            hash_search += all_pages_hash
-        title = cls.clean_title(gallery.name)
-        title_search = cls._search(title=title)
-        cls.logger.info("Title search results: %s" % title_search)
-        if len(title_search) == 1:
-            return title_search[0]
-        if len(hash_search) == 0:
-            if len(title_search) == 0:
-                cls.logger.info("No search results for gallery.")
-            else:
-                # TODO Implement gallery picker
-                cls.logger.info("No definite gallery found, picking first title result.")
-                return title_search[0]
-        else:
-            intersection = [val for val in hash_search if val in title_search]
-            if len(intersection) == 0:
-                cls.logger.info("No search intersection found, picking first hash result.")
-                return hash_search[0] or title_search[0]
-            elif len(intersection) > 1:
-                cls.logger.info("No definite gallery found, picking first insersection result")
+        if len(hash_search + all_pages_hash) == 0:
+            cls.logger.info("No search results for gallery.")
+            return
+        intersection = [r for r in hash_search if r in all_pages_hash]
+        if intersection:
+            cls.logger.info("Returning intersection result.")
             return intersection[0]
+        else:
+            cls.logger.info("No intersection results, picking first available hash.")
+            return (hash_search + all_pages_hash)[0]
+        # else:
+        #     hash_search += all_pages_hash
+        # title = cls.clean_title(gallery.name)
+        # title_search = cls._search(title=title)
+        # cls.logger.info("Title search results: %s" % title_search)
+        # if len(title_search) == 1:
+        #     return title_search[0]
+            # if len(title_search) == 0:
+            #     cls.logger.info("No search results for gallery.")
+            # else:
+            #     # TODO Implement gallery picker
+            #     cls.logger.info("No definite gallery found, picking first title result.")
+            #     return title_search[0]
+        # else:
+
+            # intersection = [val for val in hash_search if val in title_search]
+            # if len(intersection) == 0:
+            #     cls.logger.info("No search intersection found, picking first hash result.")
+            #     return hash_search[0] or title_search[0]
+            # elif len(intersection) > 1:
+            #     cls.logger.info("No definite gallery found, picking first intersection result")
+            # return intersection[0]
+
 
     @classmethod
     def _search(cls, **kwargs):
@@ -65,13 +76,13 @@ class Search(Logger):
         page_num = kwargs.get("page_num", 0)
         num_pages = kwargs.get("num_pages", 0)
         sha_hash = kwargs.get("sha_hash", "")
-        cover_only = kwargs.get("title_only", 1)
+        cover_only = kwargs.get("cover_only", 1)
         title = kwargs.get("title", "")
         url = cls.BASE_URL % (title, sha_hash, page_num, cover_only)
         response = RequestManager.get(url)
         html_results = BeautifulSoup.BeautifulSoup(response)
         results = html_results.findAll("div", {"class": "it5"})
-        #result_urls = [r.a.attrs[0][1] for r in results]
+        cls.logger.info("html results: %s" % results)
         result_urls = [r.a.attrs["href"] for r in results]
         if num_pages is None:
             pages = html_results.find("table", "ptt")

@@ -22,9 +22,8 @@ from profilehooks import profile
 
 
 class BaseThread(threading.Thread, Logger):
-    id = None
     dead = False
-    thread_count = 25
+    THREAD_COUNT = 10
 
     def __init__(self, parent, **kwargs):
         super(BaseThread, self).__init__()
@@ -48,23 +47,14 @@ class BaseThread(threading.Thread, Logger):
     def _run(self):
         raise NotImplementedError
 
-    @staticmethod
-    def chunks(data, num_chunks):
-        chunks = [[] for i in range(0, num_chunks)]
-        index = cycle((i for i in range(0, num_chunks)))
-        for element in data:
-            chunks[next(index)].append(element)
-        return chunks
-
     @classmethod
-    def generate_workers(cls, data, num_threads, target):
+    def generate_workers(cls, global_queue, target):
         worker = namedtuple("worker", "thread data errors")
         workers = []
-        split_data = cls.chunks(data, num_threads)
-        for data in split_data:
+        for _ in range(0, cls.THREAD_COUNT):
             data_queue = queue.Queue()
             error_queue = queue.Queue()
-            thread = threading.Thread(target=target, args=(data, data_queue, error_queue))
+            thread = threading.Thread(target=target, args=(global_queue, data_queue, error_queue))
             workers.append(worker(thread, data_queue, error_queue))
         return workers
 
@@ -85,13 +75,12 @@ class BaseThread(threading.Thread, Logger):
                 if restart:
                     try:
                         while True:
-                            self.queue.get(False)
+                            self.queue.get_nowait()
                     except queue.Empty:
                         pass
 
 
 class GalleryThread(BaseThread):
-    id = "gallery"
 
     def __init__(self, parent, **kwargs):
         super(GalleryThread, self).__init__(parent)
@@ -189,18 +178,18 @@ class GalleryThread(BaseThread):
         galleries = []
         dead_galleries = []
         invalid_files = []
-        filtered_candidates = []
+        global_queue = queue.Queue()
         for candidate in candidates:
             if candidate["path"] not in self.existing_paths:
-                filtered_candidates.append(candidate)
+                global_queue.put(candidate)
                 self.existing_paths.append(candidate["path"])
 
-        workers = self.generate_workers(filtered_candidates, self.thread_count, self.init_galleries)
+        workers = self.generate_workers(global_queue, self.init_galleries)
         [w.thread.start() for w in workers]
         [w.thread.join() for w in workers]
         for worker in workers:
-            galleries += worker.data.get(False)
-            errors = worker.errors.get(False)
+            galleries += worker.data.get_nowait()
+            errors = worker.errors.get_nowait()
             dead_galleries += errors.dead_galleries
             invalid_files += errors.invalid_files
         if dead_galleries:
@@ -213,16 +202,19 @@ class GalleryThread(BaseThread):
         if invalid_files:
             raise Exceptions.UnknownZipErrorMessage(invalid_files)
 
-    def init_galleries(self, candidates, data_queue, error_queue):
+    def init_galleries(self, global_queue, data_queue, error_queue):
         galleries = []
         invalid_files = []
         dead_galleries = []
 
         errors = namedtuple("errors", "invalid_files dead_galleries")
-        for candidate in candidates:
+        while not global_queue.empty():
             try:
+                candidate = global_queue.get_nowait()
                 gallery_obj = Gallery.get_class_from_type(candidate["type"])(**candidate)
                 galleries.append(gallery_obj)
+            except queue.Empty:
+                break
             except Exceptions.UnknownArchiveError:
                 gallery_obj = None
                 invalid_files.append(candidate["path"])
@@ -238,10 +230,9 @@ class GalleryThread(BaseThread):
 
 
 
+
 class ImageThread(BaseThread):
     EMIT_FREQ = 5
-    thread_count = 10
-    id = "image"
 
     def __init__(self, parent, **kwargs):
         super(ImageThread, self).__init__(parent)
@@ -262,27 +253,48 @@ class ImageThread(BaseThread):
         """
         @:type galleries list[Gallery]
         """
-        galleries = [g for g in galleries if not g.expired]
 
-        workers = self.generate_workers(galleries, self.thread_count, self.generate_image)
+        global_queue = queue.Queue()
+        for gallery in galleries:
+            if not gallery.expired:
+                global_queue.put(gallery)
+
+        workers = self.generate_workers(global_queue, self.generate_image)
         [w.thread.start() for w in workers]
         [w.thread.join() for w in workers]
         self.signals.end.emit()
 
-    def generate_image(self, galleries, data_queue, error_queue):
-        for gallery in galleries:
+        thumbs = map(os.path.normcase,
+                     [os.path.join(self.parent.THUMB_DIR, f)
+                      for f in os.listdir(self.parent.THUMB_DIR)])
+        with Database.get_session(self) as session:
+            alive_hashes = list(map(lambda x: x[0], session.execute(
+                select([Database.Gallery.image_hash]).where(
+                    Database.Gallery.dead == False))))
+            for thumb in thumbs:
+                file_hash = os.path.splitext(os.path.basename(thumb))[0]
+                if file_hash not in alive_hashes:
+                    try:
+                        os.remove(thumb)
+                    except OSError:
+                        pass
+
+    def generate_image(self, global_queue, *args):
+        while not global_queue.empty():
             try:
+                gallery = global_queue.get_nowait()
                 gallery.load_thumbnail()
+            except queue.Empty:
+                break
             except Exception:
-                self.logger.error("Gallery failed to get image", exc_info=True)
+                self.logger.error("%s failed to get image" % gallery, exc_info=True)
 
 
 class SearchThread(BaseThread):
     API_URL = "http://exhentai.org/api.php"
-    BASE_REQUEST = {"method": "gdata", "gidlist": []}
+    BASE_REQUEST = {"method": "gdata", "gidlist": [], "namespace": 1}
     API_MAX_ENTRIES = 25
     API_ENTRIES = 3
-    id = "metadata"
 
     def __init__(self, parent, **kwargs):
         super(SearchThread, self).__init__(parent)
@@ -351,7 +363,6 @@ class SearchThread(BaseThread):
 
 
 class DuplicateFinderThread(BaseThread):
-    id = "duplicate"
 
     class Signals(QtCore.QObject):
         end = QtCore.pyqtSignal(dict)

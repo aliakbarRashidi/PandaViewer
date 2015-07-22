@@ -9,7 +9,8 @@ from uuid import uuid1
 import shutil
 import Exceptions
 import zipfile
-import rarfile
+from profilehooks import profile
+from unrar import rarfile
 import tempfile
 import Database
 from contextlib import contextmanager
@@ -21,6 +22,7 @@ from PyQt5 import QtGui
 from PyQt5 import QtCore
 from time import time
 from datetime import datetime
+import scandir
 from send2trash import send2trash
 
 
@@ -39,15 +41,14 @@ class Gallery(GalleryBoilerplate):
     db_id = None
     db_uuid = None
     ui_uuid = None
-    name = None
+    name = ""
     read_count = 0
-    last_read = None
+    last_read = ""
     files = None
     db_file = ""
     time_added = None
     expired = False
     path = None
-    all_files_loaded = False
     type = None
 
     class TypeMap(object):
@@ -55,24 +56,28 @@ class Gallery(GalleryBoilerplate):
         ZipGallery = 1
         RarGallery = 2
 
-
     def __repr__(self):
-        return self.name or super(self, Gallery).__repr__()
+        return self.__class__.__name__ + ": " + self.name
 
     def __init__(self, **kwargs):
         self.ui_uuid = str(uuid1())
         self.lock = Lock()
         self.metadata = {}
-        self.parent = kwargs.get("parent", self)
-        if not kwargs.get("loaded", False):
+        self.parent = kwargs["parent"]
+        if kwargs.get("loaded"):
+            self.load_from_json(kwargs["json"])
+        else:
+            assert self.file_count > 0
             self.db_id = self.find_in_db()
             self.load_metadata()
-        else:
-            self.load_from_json(kwargs["json"])
 
     def __del__(self):
         if self.expired:
             self.delete()
+
+    @property
+    def files(self):
+        raise NotImplementedError
 
     @classmethod
     def get_class_from_type(cls, type):
@@ -190,7 +195,7 @@ class Gallery(GalleryBoilerplate):
         elif isinstance(self, ArchiveGallery):
             self.db_uuid = self.generate_uuid()
         if self.db_uuid:
-            with Database.get_session(self) as session:
+            with Database.get_session(self, acquire=True) as session:
                 gallery = list(map(dict, session.execute(
                     select([Database.Gallery]).where(
                         Database.Gallery.uuid == self.db_uuid).where(
@@ -267,7 +272,7 @@ class Gallery(GalleryBoilerplate):
             self.image_hash = db_gallery.image_hash
             self.db_uuid = db_gallery.uuid
             self.read_count = db_gallery.read_count
-            self.last_read = db_gallery.last_read
+            self.last_read = db_gallery.last_read or 0
             self.time_added = db_gallery.time_added
             if isinstance(self, ArchiveGallery):
                 self.archive_file = db_gallery.path
@@ -285,7 +290,7 @@ class Gallery(GalleryBoilerplate):
         self.db_uuid = gallery_json.get("uuid")
         self.db_id = gallery_json.get("id")
         self.read_count = gallery_json.get("read_count")
-        self.last_read = gallery_json.get("last_read")
+        self.last_read = gallery_json.get("last_read") or 0
         self.time_added = gallery_json.get("time_added")
         self.metadata = gallery_json.get("metadata", {})
         if isinstance(self, ArchiveGallery):
@@ -316,7 +321,6 @@ class Gallery(GalleryBoilerplate):
                     session.add(db_metadata)
                     session.add(db_gallery)
                 db_metadata.name = name
-                #db_metadata.json = str(json.dumps(self.metadata[name], ensure_ascii=False).encode("utf8"))
                 db_metadata.json = str(json.dumps(self.metadata[name], ensure_ascii=False))
                 session.commit()  # Have to run this on each iteration in case a new metadata table was created
             db_gallery.thumbnail_path = self.thumbnail_path
@@ -457,24 +461,28 @@ class Gallery(GalleryBoilerplate):
         return "%.1f%s%s" % (num, 'Yi', suffix)
 
     def generate_uuid(self):
-        if isinstance(self, ArchiveGallery):
-            files = self.raw_files
-        else:
-            files = self.files
-        return str(hashlib.sha1((self.generate_image_hash() + str(len(files))).encode("utf8")).hexdigest())
+        return str(hashlib.sha1((self.generate_image_hash() +
+                                 str(self.file_count)).encode("utf8")).hexdigest())
 
 
 class FolderGallery(Gallery):
-    files = None
+    _files = None
     type = Gallery.TypeMap.FolderGallery
 
     def __init__(self, **kwargs):
         self.path = os.path.normpath(kwargs.get("path"))
         self.name = os.path.normpath(self.path).split(os.sep)[-1]
-        self.files = kwargs.get("files", self.find_files(find_all=True))
-        assert len(self.files) > 0
+        self.files = kwargs.get("files")
         self.db_file = os.path.join(self.path, self.DB_ID_FILENAME)
         super(FolderGallery, self).__init__(**kwargs)
+
+    @property
+    def files(self):
+        return self._files or self.find_files()
+
+    @files.setter
+    def files(self, val):
+        self._files = val
 
     @property
     def file_count(self):
@@ -523,17 +531,14 @@ class FolderGallery(Gallery):
         with open(self.files[0], "rb") as image:
             return self.generate_hash(image)
 
-    def find_files(self, find_all=False):
+    def find_files(self):
         found_files = []
-        files = sorted(list(map(lambda x: os.path.join(self.path, x), listdir(self.path))),
-                       key=lambda f: f.lower())
-        for f in files:
-            path = os.path.join(self.path, f)
-            if os.path.isfile(path) and splitext(path)[-1].lower() in self.IMAGE_EXTS:
-                found_files.append(path)
-                if not find_all:
-                    break # Only getting the first file for now as a speedup
-        self.all_files_loaded = find_all
+        for base_folder, _, files in scandir.walk(self.path):
+            for f in files:
+                ext = os.path.splitext(f)[-1].lower()
+                if ext in self.IMAGE_EXTS:
+                    found_files.append(os.path.join(base_folder, f))
+            break
         found_files = list(map(os.path.normpath, found_files))
         self.files = sorted(found_files, key=lambda f: f.lower())
         return self.files
@@ -551,17 +556,14 @@ class FolderGallery(Gallery):
 
 class ArchiveGallery(Gallery):
     ARCHIVE_EXTS = [".zip", ".cbz"]
-    DB_ID_KEY = "lsv-db_id"
     temp_dir = None
     archive_class = None
-    raw_files = None
+    _raw_files = None
 
     def __init__(self, **kwargs):
         self.archive_file = os.path.normpath(kwargs.get("path"))
         self.path = os.path.dirname(self.archive_file)
         self.name, self.archive_type = splitext(os.path.basename(self.archive_file))
-        self.find_files()
-        assert len(self.raw_files) > 0
         super(ArchiveGallery, self).__init__(**kwargs)
 
     def __del__(self):
@@ -573,22 +575,20 @@ class ArchiveGallery(Gallery):
                 self.logger.warning("Failed to delete tempdir", exc_info=True)
 
     @property
+    def raw_files(self):
+        return self._raw_files or self.find_files()
+
+    @raw_files.setter
+    def raw_files(self, val):
+        self._raw_files = val
+
+    @property
     def sort_path(self):
         return self.archive_file
 
     @property
-    @contextmanager
     def archive(self):
-        archive = None
-        try:
-            archive = self.archive_class(self.archive_file, "r")
-            yield archive
-        except Exception:
-            self.logger.error("Failed to complete archive op for %s" % self.archive_file, exc_info=True)
-            raise Exceptions.UnknownArchiveError()
-        finally:
-            if archive:
-                archive.close()
+        raise NotImplementedError
 
     def get_image(self):
         image = QtGui.QImage()
@@ -627,7 +627,6 @@ class ArchiveGallery(Gallery):
                 ext = splitext(f)[-1].lower()
                 if ext in self.IMAGE_EXTS:
                     raw_files.append(f)
-        self.all_files_loaded = True
         self.raw_files = sorted(raw_files, key=lambda f: f.lower())
         return self.raw_files
 
@@ -644,8 +643,20 @@ class ArchiveGallery(Gallery):
 
 class ZipGallery(ArchiveGallery):
     ARCHIVE_EXTS = (".zip", ".cbz")
-    archive_class = zipfile.ZipFile
     type = Gallery.TypeMap.ZipGallery
+
+    @property
+    @contextmanager
+    def archive(self):
+        archive = None
+        try:
+            archive = zipfile.ZipFile(self.archive_file, "r")
+            yield archive
+        except Exception:
+            self.logger.error("Failed to complete archive op for %s" % self.archive_file, exc_info=True)
+            raise Exceptions.UnknownArchiveError()
+        finally:
+            archive and archive.close()
 
 
 class RarGallery(ArchiveGallery):
@@ -653,3 +664,12 @@ class RarGallery(ArchiveGallery):
     archive_class = rarfile.RarFile
     type = Gallery.TypeMap.RarGallery
 
+    @property
+    @contextmanager
+    def archive(self):
+        try:
+            archive = rarfile.RarFile(self.archive_file, "r")
+            yield archive
+        except Exception:
+            self.logger.error("Failed to complete archive op for %s" % self.archive_file, exc_info=True)
+            raise Exceptions.UnknownArchiveError()

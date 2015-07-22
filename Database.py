@@ -73,11 +73,12 @@ def setup():
     api.upgrade(DATABASE_URI, MIGRATE_REPO)
 
 @contextlib.contextmanager
-def get_session(requester):
+def get_session(requester, acquire=False):
     Database.logger.debug("New DB session requested from %s" % requester)
     session = None
     try:
-        lock.acquire()
+        if acquire:
+            lock.acquire()
         session = sqlalchemy.orm.scoped_session(session_maker)
         yield session
         session.commit()
@@ -85,7 +86,8 @@ def get_session(requester):
         session.rollback()
         raise
     finally:
-        lock.release()
+        if acquire:
+            lock.release()
         session.close()
 
 

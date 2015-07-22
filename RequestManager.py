@@ -15,6 +15,8 @@ class RequestManager(Logger):
     API_MAX_SEQUENTIAL_REQUESTS = 3
     API_TIME_TOO_FAST_WAIT = 100
     SEQ_TIME_DIFF = 10
+    SALT_BASE = 10 ** 4
+    SALT_MAX_MULTI = 2
     COOKIES = {"ipb_member_id": "", "ipb_pass_hash": ""}
     HEADERS = {"User-Agent": "Mozilla/5.0 (X11; Linux x86_64; rv:30.0) Gecko/20100101 Firefox/30.0"}  # No idea if this actually helps
     count = 0
@@ -91,9 +93,10 @@ class RequestManager(Logger):
         else:
             return response
 
-    @staticmethod
-    def salt_time(sleep_time):
-        return sleep_time * (random.randint(1000, 2000)/1000)
+    @classmethod
+    def salt_time(cls, sleep_time):
+        return sleep_time * (random.randint(cls.SALT_BASE,
+                                            cls.SALT_BASE * cls.SALT_MAX_MULTI) / cls.SALT_BASE)
 
     def validate_response(self, response):
         content_type = response.headers["content-type"]
