@@ -1,6 +1,5 @@
 #!/usr/bin/env python
 import os
-from os import listdir
 from os.path import splitext
 import hashlib
 import json
@@ -15,7 +14,6 @@ import tempfile
 import Database
 from contextlib import contextmanager
 from Search import Search
-from threading import Lock
 from Boilerplate import GalleryBoilerplate
 from sqlalchemy import select, update, insert
 from PyQt5 import QtGui
@@ -61,7 +59,6 @@ class Gallery(GalleryBoilerplate):
 
     def __init__(self, **kwargs):
         self.ui_uuid = str(uuid1())
-        self.lock = Lock()
         self.metadata = {}
         self.parent = kwargs["parent"]
         if kwargs.get("loaded"):
@@ -243,11 +240,7 @@ class Gallery(GalleryBoilerplate):
             raise Exceptions.UnableToDeleteGalleryError(self)
 
     def delete(self):
-        try:
-            self.lock.acquire()
-            self.delete_from_db()
-        finally:
-            self.lock.release()
+        self.delete_from_db()
 
     def delete_from_db(self):
         for metadata in self.metadata:
@@ -559,6 +552,7 @@ class ArchiveGallery(Gallery):
     temp_dir = None
     archive_class = None
     _raw_files = None
+    _archive = None
 
     def __init__(self, **kwargs):
         self.archive_file = os.path.normpath(kwargs.get("path"))
@@ -648,15 +642,14 @@ class ZipGallery(ArchiveGallery):
     @property
     @contextmanager
     def archive(self):
-        archive = None
         try:
-            archive = zipfile.ZipFile(self.archive_file, "r")
-            yield archive
+            self._archive = self._archive or zipfile.ZipFile(self.archive_file, "r")
+            yield self._archive
         except Exception:
             self.logger.error("Failed to complete archive op for %s" % self.archive_file, exc_info=True)
             raise Exceptions.UnknownArchiveError()
         finally:
-            archive and archive.close()
+            self._archive and self._archive.close()
 
 
 class RarGallery(ArchiveGallery):
@@ -668,8 +661,8 @@ class RarGallery(ArchiveGallery):
     @contextmanager
     def archive(self):
         try:
-            archive = rarfile.RarFile(self.archive_file, "r")
-            yield archive
+            self._archive = self._archive or rarfile.RarFile(self.archive_file, "r")
+            yield self._archive
         except Exception:
             self.logger.error("Failed to complete archive op for %s" % self.archive_file, exc_info=True)
             raise Exceptions.UnknownArchiveError()

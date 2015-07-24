@@ -195,7 +195,7 @@ Item {
 
     ScrollView {
         anchors.fill: parent
-        __wheelAreaScrollSpeed: 75
+        __wheelAreaScrollSpeed: 100
         id: galleryContent
 
         GridView {

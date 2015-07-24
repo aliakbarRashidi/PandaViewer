@@ -56,12 +56,15 @@ class Program(QtWidgets.QApplication, Logger):
         self.version = "0.1"  # Most likely used for db changes only
         self.page_number = 0
         self.search_text = ""
+        self.setOrganizationName("SG")
+        self.setOrganizationDomain(self.BUG_PAGE)
+        self.setApplicationName("PandaViewer")
 
         if not os.path.exists(self.THUMB_DIR):
             os.makedirs(self.THUMB_DIR)
         Database.setup()
         self.load_config()
-
+        self.setAttribute(QtCore.Qt.AA_UseOpenGLES, True)
         self.addLibraryPath(self.QML_PATH)
         self.qml_engine = QtQml.QQmlApplicationEngine()
         self.qml_engine.addImportPath(self.QML_PATH)
@@ -390,8 +393,10 @@ class Program(QtWidgets.QApplication, Logger):
     def get_metadata(self, uuid):
         try:
             uuid = int(uuid)
-            assert uuid == -1
             galleries = self.filter_galleries(self.galleries)
+            if uuid == -1:
+                for gallery in galleries:
+                    gallery.force_metadata = True
         except (ValueError, TypeError):
             gallery = self.get_gallery_by_uuid(uuid)
             gallery.force_metadata = True

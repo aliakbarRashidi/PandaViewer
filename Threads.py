@@ -86,7 +86,7 @@ class GalleryThread(BaseThread):
         super(GalleryThread, self).__init__(parent)
         self.signals = self.Signals()
         self.signals.end.connect(self.parent.find_galleries_done)
-        self.existing_paths = [g.path for g in self.parent.galleries]
+        self.existing_paths = [os.path.normpath(g.path) for g in self.parent.galleries]
         self.loaded = False
 
     class Signals(QtCore.QObject):
@@ -121,8 +121,6 @@ class GalleryThread(BaseThread):
                 else:
                     metadata_map[id] = [metadata]
             for gallery in db_gallery_list:
-                if gallery.get("path") in self.existing_paths:
-                    continue
                 if not os.path.exists(gallery.get("path")) and not gallery["dead"]:
                     session.execute(
                         update(Database.Gallery).where(
@@ -180,6 +178,7 @@ class GalleryThread(BaseThread):
         invalid_files = []
         global_queue = queue.Queue()
         for candidate in candidates:
+            candidate["path"] = os.path.normpath(candidate["path"])
             if candidate["path"] not in self.existing_paths:
                 global_queue.put(candidate)
                 self.existing_paths.append(candidate["path"])
@@ -281,6 +280,7 @@ class ImageThread(BaseThread):
 
     def generate_image(self, global_queue, *args):
         while not global_queue.empty():
+            gallery = None
             try:
                 gallery = global_queue.get_nowait()
                 gallery.load_thumbnail()
@@ -339,7 +339,7 @@ class SearchThread(BaseThread):
                 need_metadata_galleries = []
         if need_metadata_galleries:
             self.get_metadata(need_metadata_galleries)
-        force_galleries = [g for g in galleries if g.force_metadata]
+        force_galleries = [g for g in galleries if g.force_metadata and g.gid]
         force_gallery_metalist = [force_galleries[i:i + self.API_MAX_ENTRIES]
                                   for i in range(0, len(galleries), self.API_MAX_ENTRIES)]
         [self.get_metadata(g) for g in force_gallery_metalist]

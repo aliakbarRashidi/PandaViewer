@@ -7,7 +7,7 @@ import re
 
 
 class Search(Logger):
-    BASE_URL = r"http://exhentai.org/?f_doujinshi=1&f_manga=1&f_artistcg=1&f_gamecg=1&f_western=1&f_non-h=1&f_imageset=1&f_cosplay=1&f_asianporn=1&f_misc=1&f_sname=on&adv&f_search=%s&advsearch=1&f_srdd=2&f_apply=Apply+Filter&f_shash=%s&page=%s&fs_smiliar=1&fs_covers=%s"
+    BASE_URL = r"http://exhentai.org/?inline_set=dm_t&f_doujinshi=1&f_manga=1&f_artistcg=1&f_gamecg=1&f_western=1&f_non-h=1&f_imageset=1&f_cosplay=1&f_asianporn=1&f_misc=1&f_sname=on&adv&f_search=%s&advsearch=1&f_srdd=2&f_apply=Apply+Filter&f_shash=%s&page=%s&fs_smiliar=1&fs_covers=%s"
 
     @classmethod
     def clean_title(cls, name, remove_enclosed=True):
@@ -82,7 +82,7 @@ class Search(Logger):
         response = RequestManager.get(url)
         html_results = BeautifulSoup.BeautifulSoup(response)
         results = html_results.findAll("div", {"class": "it5"})
-        cls.logger.info("html results: %s" % results)
+        # print(html_results.findAll("div", {"class": "it5"}))
         result_urls = [r.a.attrs["href"] for r in results]
         if num_pages is None:
             pages = html_results.find("table", "ptt")

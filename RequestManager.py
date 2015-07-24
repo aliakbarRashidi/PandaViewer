@@ -17,7 +17,7 @@ class RequestManager(Logger):
     SEQ_TIME_DIFF = 10
     SALT_BASE = 10 ** 4
     SALT_MAX_MULTI = 2
-    COOKIES = {"ipb_member_id": "", "ipb_pass_hash": ""}
+    COOKIES = {"ipb_member_id": "", "ipb_pass_hash": "", "uconfig": ""}
     HEADERS = {"User-Agent": "Mozilla/5.0 (X11; Linux x86_64; rv:30.0) Gecko/20100101 Firefox/30.0"}  # No idea if this actually helps
     count = 0
     prevtime = 0

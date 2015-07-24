@@ -1,6 +1,7 @@
 import QtQuick 2.4
 import QtQuick.Controls 1.3
 import QtQuick.Layouts 1.1
+import Qt.labs.settings 1.0
 import Material 0.1
 import Material.Extras 0.1
 import Material.ListItems 0.1 as ListItem
@@ -14,6 +15,13 @@ ApplicationWindow {
         primaryDarkColor: Palette.colors["blue"]["700"]
         accentColor: Palette.colors["blue"]["500"]
         tabHighlightColor: "white"
+    }
+
+    Settings {
+        property alias x: mainWindow.x
+        property alias y: mainWindow.y
+        property alias width: mainWindow.width
+        property alias height: mainWindow.height
     }
 
     property bool scanningModeOn: false
@@ -344,6 +352,47 @@ ApplicationWindow {
             }
         ]
 
+        backAction: navDrawer.action
+        NavigationDrawer {
+            id: navDrawer
+            enabled: false
+            visible: false
+
+            Keys.onEscapePressed: navDrawer.close()
+            Flickable {
+                anchors.fill: parent
+                enabled: page.actionBar.enabled
+                contentHeight: Math.max(content.implicitHeight, height)
+
+                Column {
+                    id: content
+                    anchors.fill: parent
+
+                    Repeater {
+                        model: sections
+
+                        delegate: Column {
+                            width: parent.width
+
+                            ListItem.Subheader {
+                                text: sectionTitles[index]
+                            }
+
+                            Repeater {
+                                model: modelData
+                                delegate: ListItem.Standard {
+                                    text: modelData
+                                    onClicked: {
+                                        navDrawer.close()
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         TabView {
             id: tabView
             anchors.fill: parent
@@ -500,7 +549,13 @@ ApplicationWindow {
             text: "This will search through all of your galleries and try to find a matching gallery on EX.\n\nYou are strongly advised not to browse EX while this is running as sending too many requests can result in a ban."
             wrapMode: Text.WordWrap
         }
-        onAccepted: metadataSearch(-1)
+
+        CheckBox {
+            id: forceAll
+            text: "Redownload metadata for all galleries"
+        }
+
+        onAccepted: metadataSearch(forceAll.checked ? -1: 0)
     }
 
     Dialog {
