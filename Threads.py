@@ -18,6 +18,7 @@ import Database
 from RequestManager import RequestManager
 from Search import Search
 from sqlalchemy import select, update
+from Utils import Utils
 from profilehooks import profile
 
 
@@ -365,12 +366,12 @@ class SearchThread(BaseThread):
 class DuplicateFinderThread(BaseThread):
 
     class Signals(QtCore.QObject):
-        end = QtCore.pyqtSignal(dict)
+        end = QtCore.pyqtSignal()
 
     def __init__(self, parent):
         super(DuplicateFinderThread, self).__init__(parent)
         self.signals = self.Signals()
-        self.signals.end.connect(self.parent.duplicate_map_generated)
+        self.signals.end.connect(self.parent.duplicate_thread_done)
 
     def _run(self):
         while True:
@@ -385,4 +386,5 @@ class DuplicateFinderThread(BaseThread):
                 duplicate_map[uuid].append(gallery)
             else:
                 duplicate_map[uuid] = [gallery]
-        self.signals.end.emit(duplicate_map)
+        Utils.reduce_gallery_duplicates(duplicate_map)
+        self.signals.end.emit()

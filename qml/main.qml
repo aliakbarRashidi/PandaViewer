@@ -338,10 +338,8 @@ ApplicationWindow {
 
             Action {
                 id: duplicateAction
-                name: "Scan for duplicates"
-                enabled: !duplicateScanOn
+                name: "Delete duplicates"
                 iconName: "awesome/files_o"
-                visible: false
                 onTriggered: duplicateDialog.show()
             },
 
@@ -522,7 +520,8 @@ ApplicationWindow {
 
     Dialog {
         id: duplicateDialog
-        title: "Scan for duplicates"
+        title: "Delete duplicates"
+        positiveButtonText: "Delete duplicates"
 
         Label {
             anchors {
@@ -530,7 +529,7 @@ ApplicationWindow {
                 right: parent.right
             }
 
-            text: "This will try to find any duplicate galleries in your collection.\n\nIf any are found, they will automatically be brought to your attention."
+            text: "This will try to find and delete any duplicate galleries in your collection.\nAny deleted galleries will be moved to your OS's trash incase you wish to restore them."
             wrapMode: Text.WordWrap
         }
         onAccepted: searchForDuplicates()

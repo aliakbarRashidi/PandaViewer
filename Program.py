@@ -19,7 +19,8 @@ import logging
 import Threads
 import Exceptions
 import Database
-from Gallery import Gallery
+from Utils import Utils
+from Gallery import Gallery, FolderGallery, ArchiveGallery
 
 
 class Program(QtWidgets.QApplication, Logger):
@@ -85,7 +86,7 @@ class Program(QtWidgets.QApplication, Logger):
         self.app_window.removeGallery.connect(self.remove_gallery_by_uuid)
         self.app_window.openOnEx.connect(self.open_on_ex)
         self.app_window.saveGallery.connect(self.save_gallery_customization)
-        self.app_window.searchForDuplicates.connect(self.generate_duplicate_map)
+        self.app_window.searchForDuplicates.connect(self.remove_duplicates)
         self.app_window.closedUI.connect(self.close)
 
         self.app_window.setUISort.emit(self.sort_type, 1 if self.sort_mode_reversed else 0)
@@ -417,15 +418,14 @@ class Program(QtWidgets.QApplication, Logger):
         self.logger.debug("Metadata thread done.")
         self.setup_tags()
 
-    def generate_duplicate_map(self):
-        self.app_window.setDuplicateScanMode(True)
+    def remove_duplicates(self):
+        self.app_window.setScanningMode(True)
         self.threads["duplicate"].queue.put(self.filter_galleries(self.galleries))
 
-    def duplicate_map_generated(self, duplicate_map):
-        self.app_window.setDuplicateScanMode(False)
-        for key in duplicate_map:
-            if len(duplicate_map[key]) > 1:
-                print(duplicate_map[key][0])
+    def duplicate_thread_done(self):
+        self.app_window.setScanningMode(False)
+        self.setup_tags()
+        self.sort()
 
     def close(self):
         [g.__del__() for g in self.galleries]

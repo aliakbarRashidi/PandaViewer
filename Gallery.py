@@ -8,6 +8,7 @@ from uuid import uuid1
 import shutil
 import Exceptions
 import zipfile
+from Utils import Utils
 from profilehooks import profile
 from unrar import rarfile
 import tempfile
@@ -15,7 +16,7 @@ import Database
 from contextlib import contextmanager
 from Search import Search
 from Boilerplate import GalleryBoilerplate
-from sqlalchemy import select, update, insert
+from sqlalchemy import select, update, insert, delete
 from PyQt5 import QtGui
 from PyQt5 import QtCore
 from time import time
@@ -157,6 +158,10 @@ class Gallery(GalleryBoilerplate):
         return tooltip, lines
 
     @property
+    def location(self):
+        return self.path
+
+    @property
     def sort_name(self):
         return Search.clean_title(self.title)
 
@@ -201,12 +206,8 @@ class Gallery(GalleryBoilerplate):
                     ))))
                 if gallery:
                     self.db_id = gallery[0]["id"]
-                    if isinstance(self, ArchiveGallery):
-                        path = self.archive_file
-                    else:
-                        path = self.path
                     session.execute(update(Database.Gallery).where(
-                        Database.Gallery.id == self.db_id).values({"path": path}))
+                        Database.Gallery.id == self.db_id).values({"path": self.location}))
         if not self.db_id:
             self.create_in_db(uuid=uuid)
         return self.db_id
@@ -214,10 +215,8 @@ class Gallery(GalleryBoilerplate):
     def create_in_db(self, **kwargs):
         with Database.get_session(self) as session:
             if isinstance(self, ArchiveGallery):
-                path = self.archive_file
                 self.db_uuid = kwargs.get("uuid") or self.generate_uuid()
             else:
-                path = self.path
                 self.db_uuid = str(uuid1())
                 self.save_db_file()
 
@@ -226,12 +225,13 @@ class Gallery(GalleryBoilerplate):
                     "type": self.type,
                     "uuid": self.db_uuid,
                     "time_added": int(time()),
-                    "path": path
+                    "path": self.location
 
                 }))
             self.db_id = int(result.inserted_primary_key[0])
 
     def mark_for_deletion(self):
+        self.logger.info("Marked for deletion")
         try:
             self.delete_file()
             self.expired = True
@@ -243,20 +243,15 @@ class Gallery(GalleryBoilerplate):
         self.delete_from_db()
 
     def delete_from_db(self):
-        for metadata in self.metadata:
-            self.delete_dbmetadata(metadata)
         with Database.get_session(self) as session:
-            db_gallery = session.query(Database.Gallery).filter(Database.Gallery.id == self.db_id)[0]
-            session.delete(db_gallery)
+            session.execute(delete(Database.Metadata).where(Database.Metadata.gallery_id == self.db_id))
+            session.execute(delete(Database.Gallery).where(Database.Gallery.id == self.db_id))
 
     def delete_dbmetadata(self, metadata):
         with Database.get_session(self) as session:
-            db_gallery = session.query(Database.Gallery).filter(Database.Gallery.id == self.db_id)[0]
-            for db_metadata in db_gallery.metadata_collection:
-                if db_metadata.name == metadata:
-                    session.delete(db_metadata)
-                    self.metadata.pop(metadata, None)
-                    return
+            session.execute(delete(Database.Metadata).where(
+                Database.Metadata.gallery_id == self.db_id).where(
+                Database.Metadata.name == metadata))
 
     def load_metadata(self):
         with Database.get_session(self) as session:
@@ -320,10 +315,7 @@ class Gallery(GalleryBoilerplate):
             db_gallery.image_hash = self.image_hash
             db_gallery.read_count = self.read_count
             db_gallery.last_read = self.last_read
-            if isinstance(self, ArchiveGallery):
-                db_gallery.path = self.archive_file
-            else:
-                db_gallery.path = self.path
+            db_gallery.path = self.location
             session.add(db_gallery)
         if isinstance(self, FolderGallery):
             self.save_db_file()
@@ -346,10 +338,7 @@ class Gallery(GalleryBoilerplate):
         raise NotImplementedError
 
     def exists_under(self, directory):
-        "Returns whether the gallery exists under any of the given directories"
-        directory = os.path.normcase(os.path.realpath(directory))
-        path = os.path.normcase(os.path.realpath(self.path))
-        return directory in path
+        return Utils.path_exists_under_directory(directory, self.path)
 
     def generate_hash(self, source):
         sha1 = hashlib.sha1()
@@ -445,17 +434,25 @@ class Gallery(GalleryBoilerplate):
         if self.last_read:
             return datetime.fromtimestamp(self.last_read).strftime("%Y-%m-%d")
 
-    @staticmethod
-    def sizeof_fmt(num, suffix='B'):
-        for unit in ['','Ki','Mi','Gi','Ti','Pi','Ei','Zi']:
-            if abs(num) < 1024.0:
-                return "%3.1f%s%s" % (num, unit, suffix)
-            num /= 1024.0
-        return "%.1f%s%s" % (num, 'Yi', suffix)
-
     def generate_uuid(self):
         return str(hashlib.sha1((self.generate_image_hash() +
                                  str(self.file_count)).encode("utf8")).hexdigest())
+
+    def has_metadata_by_key(self, key):
+        for item in self.metadata.get(key, {}).values():
+            if item:
+                return True
+        return False
+
+    def has_custom_metadata(self):
+        return self.has_metadata_by_key("cmetadata")
+
+    def has_ex_metadata(self):
+        return self.has_metadata_by_key("gmetadata")
+
+    def is_archive_gallery(self):
+        return isinstance(self, ArchiveGallery)
+
 
 
 class FolderGallery(Gallery):
@@ -528,8 +525,7 @@ class FolderGallery(Gallery):
         found_files = []
         for base_folder, _, files in scandir.walk(self.path):
             for f in files:
-                ext = os.path.splitext(f)[-1].lower()
-                if ext in self.IMAGE_EXTS:
+                if Utils.file_has_allowed_extension(f, self.IMAGE_EXTS):
                     found_files.append(os.path.join(base_folder, f))
             break
         found_files = list(map(os.path.normpath, found_files))
@@ -544,7 +540,7 @@ class FolderGallery(Gallery):
 
     def get_file_size(self):
         size = sum(os.path.getsize(f) for f in self.files)
-        return self.sizeof_fmt(size)
+        return Utils.get_readable_size(size)
 
 
 class ArchiveGallery(Gallery):
@@ -552,7 +548,6 @@ class ArchiveGallery(Gallery):
     temp_dir = None
     archive_class = None
     _raw_files = None
-    _archive = None
 
     def __init__(self, **kwargs):
         self.archive_file = os.path.normpath(kwargs.get("path"))
@@ -567,6 +562,10 @@ class ArchiveGallery(Gallery):
                 shutil.rmtree(self.temp_dir)
             except Exception:
                 self.logger.warning("Failed to delete tempdir", exc_info=True)
+
+    @property
+    def location(self):
+        return self.archive_file
 
     @property
     def raw_files(self):
@@ -595,7 +594,7 @@ class ArchiveGallery(Gallery):
             archive.extractall(self.temp_dir)
 
     def get_file_size(self):
-        return self.sizeof_fmt(os.path.getsize(self.archive_file))
+        return Utils.get_readable_size(os.path.getsize(self.archive_file))
 
     @property
     def raw_image(self):
@@ -610,17 +609,14 @@ class ArchiveGallery(Gallery):
     def files(self):
         if not self.temp_dir:
             self.extract()
-        return list(map(lambda f: os.path.normpath(os.path.join(
-            self.temp_dir, f)), self.raw_files))
+        files = [os.path.join(self.temp_dir, f) for f in self.raw_files]
+        return list(map(Utils.normalize_path, files))
 
     def find_files(self, **kwargs):
         raw_files = []
         with self.archive as archive:
-            for f in archive.namelist():
-                # Really shouldn't be duplicating this code but it's late and I'm tired
-                ext = splitext(f)[-1].lower()
-                if ext in self.IMAGE_EXTS:
-                    raw_files.append(f)
+            raw_files = [f for f in archive.namelist()
+                         if Utils.file_has_allowed_extension(f, self.IMAGE_EXTS)]
         self.raw_files = sorted(raw_files, key=lambda f: f.lower())
         return self.raw_files
 
@@ -642,24 +638,26 @@ class ZipGallery(ArchiveGallery):
     @property
     @contextmanager
     def archive(self):
+        archive = None
         try:
-            self._archive = self._archive or zipfile.ZipFile(self.archive_file, "r")
-            yield self._archive
+            archive =  zipfile.ZipFile(self.archive_file, "r")
+            yield archive
         except Exception:
-            self.logger.error("Failed to complete archive op for %s" % self.archive_file, exc_info=True)
+            self.logger.error("Failed to complete archive op for %s" % archive, exc_info=True)
             raise Exceptions.UnknownArchiveError()
         finally:
-            self._archive and self._archive.close()
+            archive and archive.close()
 
 
 class RarGallery(ArchiveGallery):
     ARCHIVE_EXTS = (".rar", ".cbr")
-    archive_class = rarfile.RarFile
     type = Gallery.TypeMap.RarGallery
+    _archive = None
 
     @property
     @contextmanager
     def archive(self):
+        self._archive = None
         try:
             self._archive = self._archive or rarfile.RarFile(self.archive_file, "r")
             yield self._archive
