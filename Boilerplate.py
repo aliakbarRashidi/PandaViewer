@@ -32,6 +32,15 @@ class GalleryBoilerplate(Logger): # Need to fix this shit, not scalable with add
     def extitle(self, val):
         self.metadata["gmetadata"] = self.metadata.get("gmetadata", {})
         self.metadata["gmetadata"]["title"] = val
+        
+    @property
+    def ex_auto_collection(self):
+        return self.metadata.get("gmetadata", {}).get("auto", True)
+
+    @ex_auto_collection.setter
+    def ex_auto_collection(self, val):
+        self.metadata["gmetadata"] = self.metadata.get("gmetadata", {})
+        self.metadata["gmetadata"]["auto"] = val
 
     @property
     def extags(self):

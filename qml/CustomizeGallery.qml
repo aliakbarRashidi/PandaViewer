@@ -2,6 +2,7 @@ import QtQuick 2.4
 import QtQuick.Controls 1.3
 import QtQuick.Layouts 1.1
 import Material 0.1
+import Material.ListItems 0.1 as ListItem
 
 Page {
     id: customizePage
@@ -57,6 +58,7 @@ Page {
         galleryValues["tags"] = tagsField.text
         galleryValues["exURL"] = exURLField.text
         galleryValues["exTags"] = exTagsField.text
+        galleryValues["exAuto"] = exAutoSwitch.checked
         mainWindow.saveGallery(gallery.dbUUID, galleryValues)
     }
 
@@ -179,6 +181,25 @@ Page {
                 exURLField.hasError = !/^(https?:\/\/)?(www.)?exhentai.org\/g\/\d+\/\w+?\/?$/.test(
                             exURLField.text) && exURLField.text !== ""
             }
+        }
+
+        Label {
+            style: "subheading"
+            text: "Options"
+            anchors {
+                horizontalCenter: parent.horizontalCenter
+            }
+        }
+        ListItem.Subtitled {
+            text: "Enable automatic metadata collection"
+            secondaryItem: Switch {
+                id: exAutoSwitch
+                checked: gallery.exAuto
+                anchors.verticalCenter: parent.verticalCenter
+            }
+
+            onClicked: exAutoSwitch.checked = !exAutoSwitch.checked
+
         }
     }
 }

@@ -49,13 +49,13 @@ class UnknownArchiveError(CustomBaseException):
     msg = "Sorry, the archive file you tried to access is unable to be opened."
 
 
-class UnknownZipErrorMessage(CustomBaseException):
-    msg = """Sorry, the following zip files failed to work correcrtly.
+class UnknownArchiveErrorMessage(CustomBaseException):
+    msg = """Sorry, the some archives failed to work correcrtly.
 They might be broken, have invalid permissions, or be otherwise incompatible.
 For more details, check the log file, or post an issue on Github."""
     def __init__(self, zips):
         self.details = "\n".join(zips)
-        super(UnknownZipErrorMessage, self).__init__()
+        super(UnknownArchiveErrorMessage, self).__init__()
 
 
 class UnableToDeleteGalleryError(CustomBaseException):

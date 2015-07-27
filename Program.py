@@ -394,7 +394,7 @@ class Program(QtWidgets.QApplication, Logger):
     def get_metadata(self, uuid):
         try:
             uuid = int(uuid)
-            galleries = self.filter_galleries(self.galleries)
+            galleries = [g for g in self.filter_galleries(self.galleries) if g.ex_auto_collection]
             if uuid == -1:
                 for gallery in galleries:
                     gallery.force_metadata = True

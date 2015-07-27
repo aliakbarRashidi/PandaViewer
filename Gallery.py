@@ -91,6 +91,7 @@ class Gallery(GalleryBoilerplate):
         ctitle = ui_gallery.property("title").toString()
         extags = ui_gallery.property("exTags").toString()
         exurl = ui_gallery.property("exURL").toString()
+        ex_auto_collection = ui_gallery.property("exAuto").toBool()
 
         self.ctags = list(filter(None,
                                  map(lambda x: re.sub("^\s+", "", x),
@@ -112,6 +113,7 @@ class Gallery(GalleryBoilerplate):
         elif exurl != self.ex_url and exurl == "":
             self.delete_dbmetadata("gmetadata")
         self.parent.setup_tags()
+        self.ex_auto_collection = ex_auto_collection
         self.save_metadata()
         self.update_ui_gallery()
 
@@ -132,6 +134,7 @@ class Gallery(GalleryBoilerplate):
                 "fileSize": self.get_file_size(),
                 "fileCount": self.file_count,
                 "exURL": ex_url,
+                "exAuto": self.ex_auto_collection,
                 "hasMetadata": self.gid is not None,
                 "image": "file:///" + thumbnail_path}
 
@@ -248,6 +251,7 @@ class Gallery(GalleryBoilerplate):
             session.execute(delete(Database.Gallery).where(Database.Gallery.id == self.db_id))
 
     def delete_dbmetadata(self, metadata):
+        self.metadata.pop(metadata)
         with Database.get_session(self) as session:
             session.execute(delete(Database.Metadata).where(
                 Database.Metadata.gallery_id == self.db_id).where(
@@ -301,7 +305,7 @@ class Gallery(GalleryBoilerplate):
             for name in self.metadata:
                 db_metadata = next((m for m in db_metadata_list if m.name == name), None)
                 if not db_metadata:
-                    self.logger.debug("Creating new metadata table %s" % name)
+                    self.logger.debug("Creating new metadata row %s" % name)
                     db_metadata = Database.Metadata()
                     db_metadata.gallery = db_gallery
                     db_metadata.name = name
@@ -340,12 +344,13 @@ class Gallery(GalleryBoilerplate):
     def exists_under(self, directory):
         return Utils.path_exists_under_directory(directory, self.path)
 
-    def generate_hash(self, source):
+    @classmethod
+    def generate_hash(cls, source):
         sha1 = hashlib.sha1()
-        buff = source.read(self.HASH_SIZE)
+        buff = source.read(cls.HASH_SIZE)
         while len(buff) > 0:
             sha1.update(buff)
-            buff = source.read(self.HASH_SIZE)
+            buff = source.read(cls.HASH_SIZE)
         return sha1.hexdigest()
 
     def update_ui_gallery(self):
@@ -439,8 +444,9 @@ class Gallery(GalleryBoilerplate):
                                  str(self.file_count)).encode("utf8")).hexdigest())
 
     def has_metadata_by_key(self, key):
-        for item in self.metadata.get(key, {}).values():
-            if item:
+        metadata = self.metadata.get(key, {})
+        for key in metadata:
+            if metadata[key] and key != "auto": #TODO ugly hack please fix
                 return True
         return False
 
@@ -643,7 +649,7 @@ class ZipGallery(ArchiveGallery):
             archive =  zipfile.ZipFile(self.archive_file, "r")
             yield archive
         except Exception:
-            self.logger.error("Failed to complete archive op for %s" % archive, exc_info=True)
+            self.logger.error("Failed to complete archive op for %s" % self.archive_file, exc_info=True)
             raise Exceptions.UnknownArchiveError()
         finally:
             archive and archive.close()
@@ -657,10 +663,9 @@ class RarGallery(ArchiveGallery):
     @property
     @contextmanager
     def archive(self):
-        self._archive = None
         try:
-            self._archive = self._archive or rarfile.RarFile(self.archive_file, "r")
-            yield self._archive
+            archive = rarfile.RarFile(self.archive_file, "r")
+            yield archive
         except Exception:
             self.logger.error("Failed to complete archive op for %s" % self.archive_file, exc_info=True)
             raise Exceptions.UnknownArchiveError()

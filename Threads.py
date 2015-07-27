@@ -28,6 +28,7 @@ class BaseThread(threading.Thread, Logger):
 
     def __init__(self, parent, **kwargs):
         super(BaseThread, self).__init__()
+        self.name = self.__class__.__name__
         self.daemon = True
         self.queue = queue.Queue()
         self.parent = parent
@@ -110,6 +111,7 @@ class GalleryThread(BaseThread):
     """
 
     def load_from_db(self):
+        self.logger.info("Starting to load galleries from database.")
         candidates = []
         with Database.get_session(self) as session:
             db_gallery_list = map(dict, session.execute(select([Database.Gallery])))
@@ -143,11 +145,13 @@ class GalleryThread(BaseThread):
                              "type": gallery["type"],
                              "loaded": True}
                 candidates.append(candidate)
+        self.logger.info("Done loading galleries from database.")
         self.create_from_dict(candidates)
         self.loaded = True
 
     def find_galleries(self):
         candidates = []
+        self.logger.info("Starting search for new galleries.")
         paths = map(os.path.normpath, map(os.path.expanduser,
                                           self.parent.dirs))
         for path in paths:
@@ -171,9 +175,11 @@ class GalleryThread(BaseThread):
                                        "parent": self.parent,
                                        "type": Gallery.TypeMap.FolderGallery,
                                        "files": sorted(images, key=lambda f: f.lower())})
+        self.logger.info("Done with search for new galleries.")
         self.create_from_dict(candidates)
 
     def create_from_dict(self, candidates):
+        self.logger.info("Starting gallery creation from dicts.")
         galleries = []
         dead_galleries = []
         invalid_files = []
@@ -185,8 +191,10 @@ class GalleryThread(BaseThread):
                 self.existing_paths.append(candidate["path"])
 
         workers = self.generate_workers(global_queue, self.init_galleries)
+        self.logger.info("Starting gallery workers")
         [w.thread.start() for w in workers]
         [w.thread.join() for w in workers]
+        self.logger.info("Gallery workers done.")
         for worker in workers:
             galleries += worker.data.get_nowait()
             errors = worker.errors.get_nowait()
@@ -198,9 +206,10 @@ class GalleryThread(BaseThread):
                 for db_gallery in db_galleries:
                     db_gallery.dead = True
                     session.add(db_gallery)
+        self.logger.debug("Done creating galleries from dicts.")
         self.signals.end.emit(galleries)
         if invalid_files:
-            raise Exceptions.UnknownZipErrorMessage(invalid_files)
+            raise Exceptions.UnknownArchiveErrorMessage(invalid_files)
 
     def init_galleries(self, global_queue, data_queue, error_queue):
         galleries = []

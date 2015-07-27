@@ -26,7 +26,6 @@ ApplicationWindow {
 
     property bool scanningModeOn: false
     property bool searchModeOn: false
-    property bool duplicateScanOn: false
     width: Units.dp(16 * 5) + Units.dp(200 * 4) + Units.dp(1) + Units.dp(16)
 
     onClosing: {
@@ -39,10 +38,6 @@ ApplicationWindow {
     function setScanningMode(val) {
         scanningModeOn = val
         scanningModeSet(val)
-    }
-
-    function setDuplicateScanMode(mode) {
-        duplicateScanOn = mode
     }
 
     function setSearchMode(mode) {
@@ -323,7 +318,7 @@ ApplicationWindow {
             },
 
             Action {
-                name: "Scan folders"
+                name: "Find new galleries"
                 iconName: "awesome/database"
                 onTriggered: scanGalleries()
             },
