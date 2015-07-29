@@ -89,6 +89,9 @@ class Program(QtWidgets.QApplication, Logger):
         self.app_window.searchForDuplicates.connect(self.remove_duplicates)
         self.app_window.closedUI.connect(self.close)
 
+        self.app_window.getGalleryImageFolder.connect(self.get_gallery_image_folder)
+        self.app_window.setGalleryImage.connect(self.set_gallery_image)
+
         self.app_window.setUISort.emit(self.sort_type, 1 if self.sort_mode_reversed else 0)
         self.completer_line = QtWidgets.QLineEdit()
         self.completer_line.hide()
@@ -141,6 +144,15 @@ class Program(QtWidgets.QApplication, Logger):
     def update_gallery_rating(self, uuid, rating):
         gallery = self.get_gallery_by_uuid(uuid)
         gallery.set_rating(rating)
+
+    def get_gallery_image_folder(self, uuid):
+        gallery = self.get_gallery_by_uuid(uuid)
+        self.app_window.setGalleryImageFolder.emit(uuid, gallery.image_folder)
+
+    def set_gallery_image(self, uuid, image_path):
+        gallery = self.get_gallery_by_uuid(uuid)
+        gallery.generate_thumbnail(image_path)
+        gallery.update_ui_gallery()
 
     def open_gallery(self, uuid):
         gallery = self.get_gallery_by_uuid(uuid)

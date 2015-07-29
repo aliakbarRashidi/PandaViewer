@@ -20,11 +20,12 @@ from Search import Search
 from sqlalchemy import select, update
 from Utils import Utils
 from profilehooks import profile
+import multiprocessing
 
 
 class BaseThread(threading.Thread, Logger):
     dead = False
-    THREAD_COUNT = 10
+    THREAD_COUNT = multiprocessing.cpu_count()
 
     def __init__(self, parent, **kwargs):
         super(BaseThread, self).__init__()

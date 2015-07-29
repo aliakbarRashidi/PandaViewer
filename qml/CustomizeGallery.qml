@@ -2,6 +2,7 @@ import QtQuick 2.4
 import QtQuick.Controls 1.3
 import QtQuick.Layouts 1.1
 import Material 0.1
+import QtQuick.Dialogs 1.2
 import Material.ListItems 0.1 as ListItem
 
 Page {
@@ -22,14 +23,24 @@ Page {
 
     Component.onCompleted: {
         mainWindow.setGallery.connect(customizePage.setGallery)
+        mainWindow.setGalleryImageFolder.connect(customizePage.openGalleryImageFolder)
         galleryModel.append(gallery)
     }
 
     Component.onDestruction: {
         mainWindow.setGallery.disconnect(customizePage.setGallery)
+        mainWindow.setGalleryImageFolder.disconnect(customizePage.openGalleryImageFolder)
     }
 
     actions: [
+        Action {
+            iconName: "awesome/image"
+            name: "Select thumbnail"
+            onTriggered: {
+                mainWindow.getGalleryImageFolder(gallery.dbUUID)
+            }
+        },
+
         Action {
             iconName: "content/Save"
             name: "Save"
@@ -50,6 +61,13 @@ Page {
         }
     }
 
+    function openGalleryImageFolder(uuid, folder) {
+        if (gallery.dbUUID === uuid) {
+            imageDialog.folder = folder
+            imageDialog.open()
+        }
+    }
+
     function save() {
         var galleryValues = {
 
@@ -67,7 +85,7 @@ Page {
 
         boundsBehavior: Flickable.StopAtBounds
         width: Units.dp(200)
-        height: Units.dp(350)
+        height: Units.dp(350 + 16)
         anchors {
             top: parent.top
             left: parent.left
@@ -199,7 +217,24 @@ Page {
             }
 
             onClicked: exAutoSwitch.checked = !exAutoSwitch.checked
+        }
+    }
+    FileDialog {
+        id: imageDialog
+        selectFolder: false
+        nameFilters: ["Image files (*.jpg *.jpeg *.png)"]
+        title: "Please select an image"
+        onAccepted: {
+            var path = imageDialog.fileUrl.toString()
 
+            // remove prefixed "file:///"
+            path = Qt.platform.os == "windows" ? path.replace(
+                                                     /^(file:\/{3})/,
+                                                     "") : path.replace(
+                                                     /^(file:\/{2})/, "")
+            // unescape html codes like '%23' for '#'
+            var cleanPath = decodeURIComponent(path)
+            mainWindow.setGalleryImage(gallery.dbUUID, cleanPath.toString())
         }
     }
 }

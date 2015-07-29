@@ -59,20 +59,28 @@ ApplicationWindow {
         metadataSnackbar.open("Getting metadata for " + galleryName)
     }
 
+    signal scanGalleries
+    signal metadataSearch(string uuid)
+
     signal setSortMethod(int sortType, int reversed)
     signal setSearchText(string searchText)
-    signal saveSettings(var settings)
+
     signal askForSettings
     signal setSettings(var settings)
+    signal saveSettings(var settings)
+
     signal removeGallery(string uuid)
     signal openGallery(string uuid)
     signal openGalleryFolder(string uuid)
+
+    signal getGalleryImageFolder(string uuid)
+    signal setGalleryImageFolder(string uuid, string path)
+    signal setGalleryImage(string uuid, string path)
+
     signal setGallery(string uuid, var gallery)
     signal updateGalleryRating(string uuid, real rating)
     signal saveGallery(string uuid, var gallery)
     signal askForTags(var tag)
-    signal scanGalleries
-    signal metadataSearch(string uuid)
     signal openOnEx(string uuid)
     signal setNoSearchResults(bool noSearchResults)
     signal searchForDuplicates
@@ -83,7 +91,6 @@ ApplicationWindow {
     signal setUIGalleries(var galleries)
     signal removeUIGallery(int index, int count)
     signal setUISort(int sortType, int reversed)
-
     signal closedUI
 
     function setTags(tags) {

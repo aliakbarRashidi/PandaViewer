@@ -77,6 +77,10 @@ class Gallery(GalleryBoilerplate):
     def files(self):
         raise NotImplementedError
 
+    @property
+    def image_folder(self):
+        return "file:///" + os.path.dirname(self.files[0])
+
     @classmethod
     def get_class_from_type(cls, type):
         if type == cls.TypeMap.FolderGallery:
@@ -345,6 +349,11 @@ class Gallery(GalleryBoilerplate):
         return Utils.path_exists_under_directory(directory, self.path)
 
     @classmethod
+    def generate_hash_from_file(cls, file_path):
+        with open(file_path, "rb") as f:
+            return cls.generate_hash(f)
+
+    @classmethod
     def generate_hash(cls, source):
         sha1 = hashlib.sha1()
         buff = source.read(cls.HASH_SIZE)
@@ -390,26 +399,35 @@ class Gallery(GalleryBoilerplate):
     def delete_file(self):
         raise NotImplementedError
 
-    def resize_image(self):
-        image = self.get_image()
+    @classmethod
+    def get_image_from_file(self, file_path):
+        assert os.path.exists(file_path)
+        image = QtGui.QImageReader()
+        image.setDecideFormatFromContent(True)
+        image.setFileName(file_path)
+        image = image.read()
+        assert image.width()
+        return image
+
+    def resize_image(self, image_path=None):
+        image = self.get_image_from_file(image_path) if image_path else self.get_image()
         if image.width() > image.height():
             transform = QtGui.QTransform()
             transform.rotate(-90)
             image = image.transformed(transform)
         return image.scaledToWidth(self.IMAGE_WIDTH, QtCore.Qt.SmoothTransformation)
 
-    def verify_hash(self, image_hash):
-        return self.image_hash == image_hash
+    def generate_thumbnail(self, image_path=None):
+        self.image_hash = self.generate_hash_from_file(image_path) if image_path else self.generate_image_hash()
+        image = self.resize_image(image_path)
+        self.thumbnail_path = os.path.join(self.parent.THUMB_DIR, self.image_hash + ".jpg")
+        self.logger.debug("Saving new thumbnail")
+        assert image.save(self.thumbnail_path, "JPG")
+        assert os.path.exists(self.thumbnail_path)
 
     def load_thumbnail(self):
-        image_hash = self.generate_image_hash()
-        if not self.thumbnail_path or not os.path.exists(self.thumbnail_path) or not self.verify_hash(image_hash):
-            self.image_hash = image_hash
-            self.thumbnail_path = os.path.join(self.parent.THUMB_DIR, self.image_hash + ".jpg")
-            image = self.resize_image()
-            self.logger.debug("Saving new thumbnail")
-            assert image.save(self.thumbnail_path, "JPG")
-            assert os.path.exists(self.thumbnail_path)
+        if not self.thumbnail_path or not os.path.exists(self.thumbnail_path):
+            self.generate_thumbnail()
             self.save_metadata()
         self.thumbnail_verified = True
 
@@ -460,7 +478,6 @@ class Gallery(GalleryBoilerplate):
         return isinstance(self, ArchiveGallery)
 
 
-
 class FolderGallery(Gallery):
     _files = None
     type = Gallery.TypeMap.FolderGallery
@@ -489,12 +506,7 @@ class FolderGallery(Gallery):
         return self.path
 
     def get_image(self):
-        image = QtGui.QImageReader()
-        image.setDecideFormatFromContent(True)
-        image.setFileName(self.files[0])
-        image = image.read()
-        assert image.width()
-        return image
+        return self.get_image_from_file(self.files[0])
 
     def save_db_file(self):
         self.logger.debug("Saving DB UUID file.")
@@ -524,8 +536,7 @@ class FolderGallery(Gallery):
             assert db_gallery.count() == 1
 
     def generate_image_hash(self):
-        with open(self.files[0], "rb") as image:
-            return self.generate_hash(image)
+        return self.generate_hash_from_file(self.files[0])
 
     def find_files(self):
         found_files = []
@@ -595,9 +606,10 @@ class ArchiveGallery(Gallery):
         return image
 
     def extract(self):
-        self.temp_dir = os.path.normpath(tempfile.mkdtemp())
-        with self.archive as archive:
-            archive.extractall(self.temp_dir)
+        if not self.temp_dir:
+            self.temp_dir = Utils.normalize_path(tempfile.mkdtemp())
+            with self.archive as archive:
+                archive.extractall(self.temp_dir)
 
     def get_file_size(self):
         return Utils.get_readable_size(os.path.getsize(self.archive_file))
@@ -613,8 +625,7 @@ class ArchiveGallery(Gallery):
 
     @property
     def files(self):
-        if not self.temp_dir:
-            self.extract()
+        self.extract()
         files = [os.path.join(self.temp_dir, f) for f in self.raw_files]
         return list(map(Utils.normalize_path, files))
 
