@@ -65,8 +65,6 @@ ApplicationWindow {
     signal setSortMethod(int sortType, int reversed)
     signal setSearchText(string searchText)
 
-    signal askForSettings
-    signal setSettings(var settings)
     signal saveSettings(var settings)
 
     signal removeGallery(string uuid)
@@ -104,6 +102,10 @@ ApplicationWindow {
         }
     }
 
+    function setSettings(settings) {
+        mainWindow.settings = settings
+    }
+
     function setException(message, fatal) {
         if (exceptionDialog.visible) {
             exceptionDialog.accept()
@@ -116,6 +118,8 @@ ApplicationWindow {
         exceptionDialog.messageText = message
         exceptionDialog.show()
     }
+
+    property var settings: {""}
 
     property var homeSections: ["Galleries"]
 

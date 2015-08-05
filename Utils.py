@@ -7,7 +7,18 @@ class Utils(Logger):
     def path_exists_under_directory(cls, main_directory, sub_directory):
         main_directory = cls.normalize_path(main_directory)
         sub_directory = cls.normalize_path(sub_directory)
-        return main_directory in sub_directory
+        if main_directory[-1] != os.path.sep:
+            main_directory += os.path.sep
+        if sub_directory[-1] != os.path.sep:
+            sub_directory += os.path.sep
+        return sub_directory.startswith(main_directory)
+
+    @classmethod
+    def get_parent_folder(cls, candidates, folder):
+        candidates = [cls.normalize_path(c) for c in candidates
+                      if cls.path_exists_under_directory(c, folder)]
+        return max(candidates, key=len)
+
 
     @classmethod
     def file_has_allowed_extension(cls, check_file, allowed_extensions):
@@ -16,7 +27,14 @@ class Utils(Logger):
 
     @classmethod
     def normalize_path(cls, path):
-        return os.path.normpath(os.path.realpath(path))
+        return os.path.normpath(os.path.realpath(os.path.expanduser(path)))
+
+    @classmethod
+    def convert_to_qml_path(cls, path):
+        base_string = "file://"
+        if os.name == "nt":
+            base_string += "/"
+        return base_string + path
 
     @classmethod
     def get_readable_size(cls, num,  suffix="B"):

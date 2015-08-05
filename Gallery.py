@@ -31,12 +31,10 @@ class Gallery(GalleryBoilerplate):
     IMAGE_WIDTH = 200
     MAX_TOOLTIP_LENGTH = 80
     BASE_EX_URL = "http://exhentai.org/g/%s/%s/"
-    DB_ID_FILENAME = ".dbid"
     thumbnail_path = None
     image_hash = None
     metadata = None
     force_metadata = False
-    thumbnail_verified = False
     db_id = None
     db_uuid = None
     ui_uuid = None
@@ -44,7 +42,6 @@ class Gallery(GalleryBoilerplate):
     read_count = 0
     last_read = ""
     files = None
-    db_file = ""
     time_added = None
     expired = False
     path = None
@@ -79,7 +76,7 @@ class Gallery(GalleryBoilerplate):
 
     @property
     def image_folder(self):
-        return "file:///" + os.path.dirname(self.files[0])
+        return Utils.convert_to_qml_path(os.path.dirname(self.files[0]))
 
     @classmethod
     def get_class_from_type(cls, type):
@@ -140,7 +137,7 @@ class Gallery(GalleryBoilerplate):
                 "exURL": ex_url,
                 "exAuto": self.ex_auto_collection,
                 "hasMetadata": self.gid is not None,
-                "image": "file:///" + thumbnail_path}
+                "image": Utils.convert_to_qml_path(thumbnail_path)}
 
     def get_tooltip(self):
         plural = "s" if self.read_count != 1 else ""
@@ -184,6 +181,9 @@ class Gallery(GalleryBoilerplate):
     def sort_rating(self):
         return float(self.rating or 0)
 
+    def has_valid_thumbnail(self):
+        return self.thumbnail_path and os.path.exists(self.thumbnail_path)
+
     def set_rating(self, rating):
         rating = str(rating)
         if rating == "0.0":
@@ -194,39 +194,24 @@ class Gallery(GalleryBoilerplate):
 
     def find_in_db(self):
         # TODO: Deprecate uuid for folder galleries
-        uuid = None
-        if os.path.exists(self.db_file):
-            try:
-                self.db_uuid = self.load_db_file()
-            except Exception:
-                self.logger.warning("DB UUID file invalid.", exc_info=True)
-                self.delete_db_file()
-        elif isinstance(self, ArchiveGallery):
-            self.db_uuid = self.generate_uuid()
-        if self.db_uuid:
-            with Database.get_session(self, acquire=True) as session:
-                gallery = list(map(dict, session.execute(
-                    select([Database.Gallery]).where(
-                        Database.Gallery.uuid == self.db_uuid).where(
-                        Database.Gallery.type == self.type).where(
-                        Database.Gallery.dead == True
-                    ))))
-                if gallery:
-                    self.db_id = gallery[0]["id"]
-                    session.execute(update(Database.Gallery).where(
-                        Database.Gallery.id == self.db_id).values({"path": self.location}))
+        self.db_uuid = self.generate_uuid()
+        with Database.get_session(self, acquire=True) as session:
+            db_gallery = list(map(dict, session.execute(
+                select([Database.Gallery]).where(
+                    Database.Gallery.uuid == self.db_uuid).where(
+                    Database.Gallery.type == self.type).where(
+                    Database.Gallery.dead == True
+                ))))
+            if db_gallery:
+                self.db_id = db_gallery[0]["id"]
+                session.execute(update(Database.Gallery).where(
+                    Database.Gallery.id == self.db_id).values({"path": self.location}))
         if not self.db_id:
-            self.create_in_db(uuid=uuid)
+            self.db_id = self.create_in_db()
         return self.db_id
 
     def create_in_db(self, **kwargs):
         with Database.get_session(self) as session:
-            if isinstance(self, ArchiveGallery):
-                self.db_uuid = kwargs.get("uuid") or self.generate_uuid()
-            else:
-                self.db_uuid = str(uuid1())
-                self.save_db_file()
-
             result = session.execute(insert(Database.Gallery).values(
                 {
                     "type": self.type,
@@ -235,7 +220,7 @@ class Gallery(GalleryBoilerplate):
                     "path": self.location
 
                 }))
-            self.db_id = int(result.inserted_primary_key[0])
+            return int(result.inserted_primary_key[0])
 
     def mark_for_deletion(self):
         self.logger.info("Marked for deletion")
@@ -304,39 +289,39 @@ class Gallery(GalleryBoilerplate):
         self.logger.info("Saving gallery metadata")
         self.metadata = self.clean_metadata(self.metadata)
         with Database.get_session(self) as session:
-            db_gallery = session.query(Database.Gallery).filter(Database.Gallery.id == self.db_id)[0]
-            db_metadata_list = db_gallery.metadata_collection
+            db_metadata_list = list(map(dict, session.execute(select([Database.Metadata]).where(
+                Database.Metadata.gallery_id == self.db_id))))
             for name in self.metadata:
-                db_metadata = next((m for m in db_metadata_list if m.name == name), None)
+                metadata_json = str(json.dumps(self.metadata[name], ensure_ascii=False))
+                db_metadata = next((m for m in db_metadata_list if m["name"] == name), None)
                 if not db_metadata:
-                    self.logger.debug("Creating new metadata row %s" % name)
-                    db_metadata = Database.Metadata()
-                    db_metadata.gallery = db_gallery
-                    db_metadata.name = name
-                    db_gallery.metadata_collection.append(db_metadata)
-                    session.add(db_metadata)
-                    session.add(db_gallery)
-                db_metadata.name = name
-                db_metadata.json = str(json.dumps(self.metadata[name], ensure_ascii=False))
-                session.commit()  # Have to run this on each iteration in case a new metadata table was created
-            db_gallery.thumbnail_path = self.thumbnail_path
-            db_gallery.image_hash = self.image_hash
-            db_gallery.read_count = self.read_count
-            db_gallery.last_read = self.last_read
-            db_gallery.path = self.location
-            session.add(db_gallery)
-        if isinstance(self, FolderGallery):
-            self.save_db_file()
+                    session.execute(insert(Database.Metadata).values(
+                        {
+                            "name": name,
+                            "gallery_id": self.db_id,
+                            "json": metadata_json,
+                        }
+                    ))
+                else:
+                    session.execute(update(Database.Metadata).where(
+                        Database.Metadata.gallery_id == self.db_id).where(
+                        Database.Metadata.name == name).values(
+                        {
+                            "json": metadata_json,
+
+                        }
+                    ))
+            session.execute(update(Database.Gallery).where(Database.Gallery.id == self.db_id).values(
+                {
+                    "thumbnail_path": self.thumbnail_path,
+                    "image_hash": self.image_hash,
+                    "read_count": self.read_count,
+                    "last_read": self.last_read,
+                    "path": self.location,
+                }
+            ))
+        self.logger.info("Gallery metadata saved")
         self.update_ui_gallery()
-
-    def save_db_file(self):
-        raise NotImplementedError
-
-    def delete_db_file(self):
-        raise NotImplementedError
-
-    def load_db_file(self):
-        raise NotImplementedError
 
     def get_file_size(self):
         raise NotImplementedError
@@ -344,9 +329,6 @@ class Gallery(GalleryBoilerplate):
     @property
     def file_count(self):
         raise NotImplementedError
-
-    def exists_under(self, directory):
-        return Utils.path_exists_under_directory(directory, self.path)
 
     @classmethod
     def generate_hash_from_file(cls, file_path):
@@ -426,10 +408,9 @@ class Gallery(GalleryBoilerplate):
         assert os.path.exists(self.thumbnail_path)
 
     def load_thumbnail(self):
-        if not self.thumbnail_path or not os.path.exists(self.thumbnail_path):
+        if not self.has_valid_thumbnail():
             self.generate_thumbnail()
             self.save_metadata()
-        self.thumbnail_verified = True
 
     def delete_thumbnail(self):
         try:
@@ -483,15 +464,16 @@ class FolderGallery(Gallery):
     type = Gallery.TypeMap.FolderGallery
 
     def __init__(self, **kwargs):
-        self.path = os.path.normpath(kwargs.get("path"))
-        self.name = os.path.normpath(self.path).split(os.sep)[-1]
+        self.path = Utils.normalize_path(kwargs.get("path"))
+        if kwargs.get("loaded"):
+            assert os.listdir(self.path)  # Needed to ensure a empty directory gets marked as dead
+        self.name = self.path.split(os.sep)[-1]
         self.files = kwargs.get("files")
-        self.db_file = os.path.join(self.path, self.DB_ID_FILENAME)
         super(FolderGallery, self).__init__(**kwargs)
 
     @property
     def files(self):
-        return self._files or self.find_files()
+        return self._files if self._files is not None else self.find_files()
 
     @files.setter
     def files(self, val):
@@ -508,33 +490,6 @@ class FolderGallery(Gallery):
     def get_image(self):
         return self.get_image_from_file(self.files[0])
 
-    def save_db_file(self):
-        self.logger.debug("Saving DB UUID file.")
-        try:
-            db_file = open(self.db_file, "r+b")
-        except IOError:
-            db_file = open(self.db_file, "wb")
-        try:
-            db_file.write(bytes(self.db_uuid, "UTF-8"))
-            db_file.truncate()
-        finally:
-            db_file.close()
-
-    def load_db_file(self):
-        self.logger.debug("Loading DB UUID file.")
-        db_file = open(self.db_file, "rb")
-        db_uuid = db_file.read().decode("utf8")
-        self.logger.info("DB UUID loaded from file: %s" % db_uuid)
-        db_file.close()
-        self.validate_db_uuid(db_uuid)
-        return db_uuid
-
-    def validate_db_uuid(self, db_uuid):
-        with Database.get_session(self) as session:
-            db_gallery = session.query(Database.Gallery).filter(
-                Database.Gallery.uuid == db_uuid, Database.Gallery.dead == True)
-            assert db_gallery.count() == 1
-
     def generate_image_hash(self):
         return self.generate_hash_from_file(self.files[0])
 
@@ -549,9 +504,6 @@ class FolderGallery(Gallery):
         self.files = sorted(found_files, key=lambda f: f.lower())
         return self.files
 
-    def delete_db_file(self):
-        os.remove(self.db_file)
-
     def delete_file(self):
         send2trash(self.path)
 
@@ -561,13 +513,12 @@ class FolderGallery(Gallery):
 
 
 class ArchiveGallery(Gallery):
-    ARCHIVE_EXTS = [".zip", ".cbz"]
     temp_dir = None
     archive_class = None
     _raw_files = None
 
     def __init__(self, **kwargs):
-        self.archive_file = os.path.normpath(kwargs.get("path"))
+        self.archive_file = Utils.normalize_path(kwargs.get("path"))
         self.path = os.path.dirname(self.archive_file)
         self.name, self.archive_type = splitext(os.path.basename(self.archive_file))
         super(ArchiveGallery, self).__init__(**kwargs)
@@ -586,7 +537,7 @@ class ArchiveGallery(Gallery):
 
     @property
     def raw_files(self):
-        return self._raw_files or self.find_files()
+        return self._raw_files if self._raw_files is not None else self.find_files()
 
     @raw_files.setter
     def raw_files(self, val):

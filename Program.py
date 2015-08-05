@@ -20,7 +20,8 @@ import Threads
 import Exceptions
 import Database
 from Utils import Utils
-from Gallery import Gallery, FolderGallery, ArchiveGallery
+from Gallery import Gallery
+from profilehooks import profile
 
 
 class Program(QtWidgets.QApplication, Logger):
@@ -64,7 +65,6 @@ class Program(QtWidgets.QApplication, Logger):
         if not os.path.exists(self.THUMB_DIR):
             os.makedirs(self.THUMB_DIR)
         Database.setup()
-        self.load_config()
         self.setAttribute(QtCore.Qt.AA_UseOpenGLES, True)
         self.addLibraryPath(self.QML_PATH)
         self.qml_engine = QtQml.QQmlApplicationEngine()
@@ -75,7 +75,6 @@ class Program(QtWidgets.QApplication, Logger):
         self.app_window.updateGalleryRating.connect(self.update_gallery_rating)
         self.app_window.askForTags.connect(self.get_tags_from_search)
         self.app_window.saveSettings.connect(self.update_config)
-        self.app_window.askForSettings.connect(self.send_config)
         self.app_window.setSortMethod.connect(self.set_sorting)
         self.app_window.setSearchText.connect(self.update_search)
         self.app_window.pageChange.connect(self.switch_page)
@@ -92,6 +91,7 @@ class Program(QtWidgets.QApplication, Logger):
         self.app_window.getGalleryImageFolder.connect(self.get_gallery_image_folder)
         self.app_window.setGalleryImage.connect(self.set_gallery_image)
 
+        self.load_config()
         self.app_window.setUISort.emit(self.sort_type, 1 if self.sort_mode_reversed else 0)
         self.completer_line = QtWidgets.QLineEdit()
         self.completer_line.hide()
@@ -122,6 +122,7 @@ class Program(QtWidgets.QApplication, Logger):
     def remove_gallery_by_uuid(self, uuid):
         gallery = self.get_gallery_by_uuid(uuid)
         gallery.mark_for_deletion()
+        self.current_page.remove(gallery)
         self.setup_tags()
 
     def get_tags_from_search(self, search):
@@ -142,12 +143,11 @@ class Program(QtWidgets.QApplication, Logger):
         return next(g for g in self.current_page if g.ui_uuid == uuid)
 
     def update_gallery_rating(self, uuid, rating):
-        gallery = self.get_gallery_by_uuid(uuid)
-        gallery.set_rating(rating)
+        self.get_gallery_by_uuid(uuid).set_rating(rating)
 
     def get_gallery_image_folder(self, uuid):
-        gallery = self.get_gallery_by_uuid(uuid)
-        self.app_window.setGalleryImageFolder.emit(uuid, gallery.image_folder)
+        self.app_window.setGalleryImageFolder.emit(uuid,
+                                                   self.get_gallery_by_uuid(uuid).image_folder)
 
     def set_gallery_image(self, uuid, image_path):
         gallery = self.get_gallery_by_uuid(uuid)
@@ -155,16 +155,13 @@ class Program(QtWidgets.QApplication, Logger):
         gallery.update_ui_gallery()
 
     def open_gallery(self, uuid):
-        gallery = self.get_gallery_by_uuid(uuid)
-        gallery.open_file()
+        self.get_gallery_by_uuid(uuid).open_file()
 
     def open_gallery_folder(self, uuid):
-        gallery = self.get_gallery_by_uuid(uuid)
-        gallery.open_folder()
+        self.get_gallery_by_uuid(uuid).open_folder()
 
     def open_on_ex(self, uuid):
-        gallery = self.get_gallery_by_uuid(uuid)
-        gallery.open_on_ex()
+        self.get_gallery_by_uuid(uuid).open_on_ex()
 
     def save_gallery_customization(self, uuid, gallery):
         self.get_gallery_by_uuid(uuid).save_customization(gallery)
@@ -188,7 +185,14 @@ class Program(QtWidgets.QApplication, Logger):
     @sort_mode_reversed.setter
     def sort_mode_reversed(self, val):
         self.config["sort_mode_reversed"] = val
+        
+    @property
+    def confirm_delete(self):
+        return self.config.get("confirm_delete", True)
 
+    @confirm_delete.setter
+    def confirm_delete(self, val):
+        self.config["confirm_delete"] = val
 
     @property
     def current_page(self):
@@ -218,12 +222,20 @@ class Program(QtWidgets.QApplication, Logger):
         self.config["cookies"]["ipb_pass_hash"] = val
 
     @property
-    def dirs(self):
-        return self.config["dirs"]
+    def folders(self):
+        return list(map(Utils.normalize_path, self.config["dirs"]))
 
-    @dirs.setter
-    def dirs(self, val):
+    @folders.setter
+    def folders(self, val):
         self.config["dirs"] = val
+
+    @property
+    def folder_metadata_map(self):
+        return self.config.get("folder_metadata_map", {})
+
+    @folder_metadata_map.setter
+    def folder_metadata_map(self, val):
+        self.config["folder_metadata_map"] = val
 
     @property
     def cookies(self):
@@ -246,11 +258,14 @@ class Program(QtWidgets.QApplication, Logger):
                 self.config = json.loads(db_config.json)
                 self.version = db_config.version
         RequestManager.COOKIES = self.config["cookies"]
+        self.set_ui_config()
 
-    def send_config(self):
-        self.app_window.setSettings.emit({"exUserID": self.member_id,
-                                          "exPassHash": self.pass_hash,
-                                          "folders": self.dirs})
+    def set_ui_config(self):
+        self.app_window.setSettings({"exUserID": self.member_id,
+                                     "exPassHash": self.pass_hash,
+                                     "folders": self.folders,
+                                     "folder_metadata_map": self.folder_metadata_map,
+                                     })
 
     def save_config(self):
         self.logger.debug("Save config to db.")
@@ -261,26 +276,42 @@ class Program(QtWidgets.QApplication, Logger):
             session.add(db_config)
         self.sort()
 
-    def update_config(self, config):
+    def update_config(self, config): # TODO replace config with ini file, switch qml from camel case
         self.logger.info("Updating config.")
-        self.dirs = config.property("folders").toVariant()
+        self.folders = config.property("folders").toVariant()
+        folder_metadata_map = config.property("folder_metadata_map").toVariant()
+        for key in folder_metadata_map:
+            if folder_metadata_map.get(key) != self.folder_metadata_map.get(key):
+                self.folder_metadata_map = folder_metadata_map
+                self.set_auto_metadata_collection()
+                break
         self.member_id = config.property("exUserID").toString()
         self.pass_hash = config.property("exPassHash").toString()
         RequestManager.COOKIES = self.cookies
         self.save_config()
 
+    def set_auto_metadata_collection(self, galleries=None):
+        galleries = galleries or self.galleries
+        for gallery in self.filter_galleries(galleries):
+            matching_dir = Utils.get_parent_folder(self.folders, gallery.path)
+            assert matching_dir
+            ex_auto_collection = self.folder_metadata_map.get(matching_dir, True)
+            if ex_auto_collection != gallery.ex_auto_collection:
+                gallery.ex_auto_collection = ex_auto_collection
+                gallery.save_metadata()
+
     def process_search(self, search_text):
         quote_regex = re.compile(r"(-)?\"(.*?)\"")
         filter_regex = re.compile(r"(?:^|\s)\-(.*?)(?=(?:$|\ ))")
         search_text = search_text.lower()
-        rating = re.search(r"rating:(\S*)", search_text)
-        if rating:
+        rating_method = re.search(r"rating:(\S*)", search_text)
+        if rating_method:
             search_text = re.sub("rating:\S*", "", search_text)
-            rating = rating.groups()[0]
-            if rating[0] == "=" and rating[1] != "=":
-                rating = "=" + rating
+            rating_method = rating_method.groups()[0]
+            if rating_method[0] == "=" and rating_method[1] != "=":
+                rating_method = "=" + rating_method
             try:
-                eval("0.0" + rating)
+                eval("0.0" + rating_method)
             except:
                 raise Exceptions.InvalidRatingSearch()
         quoted_words = re.findall(quote_regex, search_text)
@@ -290,8 +321,8 @@ class Program(QtWidgets.QApplication, Logger):
         words = re.sub(filter_regex, "", search_text).split()
         self.logger.info("Search words: %s" % words)
         self.logger.info("Filter words: %s" % filter_words)
-        self.logger.info("Rating function: %s" % rating)
-        return words, filter_words, rating
+        self.logger.info("Rating function: %s" % rating_method)
+        return words, filter_words, rating_method
 
     def search(self):
         self.logger.info("Search_text: %s" % self.search_text)
@@ -300,15 +331,15 @@ class Program(QtWidgets.QApplication, Logger):
             self.setup_pages()
             self.show_page()
         else:
-            words, filters, rating = self.process_search(self.search_text)
+            words, filters, rating_method = self.process_search(self.search_text)
             galleries = []
             for gallery in self.galleries:
                 if gallery.expired:
                     continue
                 title = gallery.clean_name.lower().split()
                 tags = [t.replace(" ", "_").lower() for t in gallery.tags]
-                if rating and (not gallery.rating or
-                               not eval(gallery.rating + rating)):
+                if rating_method and (not gallery.rating or
+                                          not eval(gallery.rating + rating_method)):
                     continue
                 if any(self.in_search(tags, title, w) for w in filters):
                     continue
@@ -364,6 +395,7 @@ class Program(QtWidgets.QApplication, Logger):
 
     def find_galleries_done(self, galleries):
         self.app_window.setScanningMode(False)
+        self.set_auto_metadata_collection(galleries)
         self.galleries += galleries
         self.logger.debug("Gallery thread done")
         self.setup_tags()
@@ -384,7 +416,7 @@ class Program(QtWidgets.QApplication, Logger):
     def show_page(self):
         need_images = []
         for gallery in self.current_page:
-            if not gallery.thumbnail_verified:
+            if not gallery.has_valid_thumbnail():
                 need_images.append(gallery)
         if need_images:
             self.generate_images(need_images)
@@ -471,7 +503,7 @@ class Program(QtWidgets.QApplication, Logger):
         for gallery in galleries:
             if gallery.expired:
                 continue
-            if not any(gallery.exists_under(d) for d in self.dirs):
+            if not any(Utils.path_exists_under_directory(d, gallery.path) for d in self.folders):
                 continue
             return_galleries.append(gallery)
         return return_galleries

@@ -19,7 +19,6 @@ Page {
             onTriggered: {
                 page.saveSettings()
                 mainWindow.pageStack.pop()
-
             }
         }
     ]
@@ -34,29 +33,29 @@ Page {
     }
 
     Component.onCompleted: {
-        mainWindow.setSettings.connect(setSettings)
-        mainWindow.askForSettings()
+        setSettings()
     }
 
     function saveSettings() {
-        var settings = {
-
-        }
-        settings["folders"] = []
-        settings["exPassHash"] = exPassHash.value
-        settings["exUserID"] = exUserID.value
+        mainWindow.settings["folders"] = []
+        mainWindow.settings["folder_metadata_map"] = {}
+        mainWindow.settings["exPassHash"] = exPassHash.value
+        mainWindow.settings["exUserID"] = exUserID.value
         for (var i = 0; i < folderModel.count; ++i) {
             var folder = folderModel.get(i)
-            settings["folders"].push(folder.folderPath)
+            mainWindow.settings["folders"].push(folder.folderPath)
+            mainWindow.settings["folder_metadata_map"][folder.folderPath] = folder.metadataEnabled
         }
-        mainWindow.saveSettings(settings)
+        mainWindow.saveSettings(mainWindow.settings)
     }
 
-    function setSettings(settings) {
-        exPassHash.value = settings["exPassHash"]
-        exUserID.value = settings["exUserID"]
-        for (var i = 0; i < settings["folders"].length; ++i) {
-            galleriesTab.addFolder(settings["folders"][i])
+    function setSettings() {
+        exPassHash.value = mainWindow.settings["exPassHash"]
+        exUserID.value = mainWindow.settings["exUserID"]
+        for (var i = 0; i < mainWindow.settings["folders"].length; ++i) {
+            var folder = mainWindow.settings["folders"][i]
+            var metadataEnabled = mainWindow.settings["folder_metadata_map"][folder]
+            galleriesTab.addFolder(folder, metadataEnabled)
         }
     }
 
@@ -76,16 +75,15 @@ Page {
             width: tabView.width
             height: tabView.height
 
-
             Column {
                 anchors {
                     fill: parent
                     margins: Units.dp(16)
                 }
 
-            ListItem.Subheader {
-                text: "ExH Settings"
-            }
+                ListItem.Subheader {
+                    text: "ExH Settings"
+                }
                 SettingsItem {
                     id: exUserID
                     text: "ExH User ID"
@@ -122,7 +120,6 @@ Page {
                     PropertyChanges {
                         target: centerMessage
                         visible: true
-
                     }
                 }
             ]
@@ -148,6 +145,26 @@ Page {
                 }
             }
 
+
+//                        Label {
+//                            anchors {
+//                                left: parent.left
+//                            }
+//                            text: "Path"
+//                            color: Theme.light.subTextColor
+//                            style: "body1"
+//                        }
+
+//                        Label {
+//                            anchors {
+//                                right: parent.right
+//                            }
+
+//                            text: "Enable metadata collection          "
+//                            color: Theme.light.subTextColor
+//                            style: "body1"
+//                        }
+
             ListView {
                 id: folderView
 
@@ -156,11 +173,14 @@ Page {
                     margins: Units.dp(16)
                 }
                 model: folderModel
+
+
                 delegate: RowLayout {
                     id: row
                     anchors {
                         left: parent.left
                         right: parent.right
+                        margins: Units.dp(8)
                     }
 
                     TextField {
@@ -168,7 +188,8 @@ Page {
                         text: folderPath
                         anchors {
                             left: parent.left
-                            right: removeButton.left
+                            right: metadataSwitch.left
+                            rightMargin: Units.dp(16)
                         }
                         onTextChanged: folderModel.setProperty(index,
                                                                "folderPath",
@@ -185,12 +206,27 @@ Page {
                         onClicked: folderModel.remove(index)
                         anchors.verticalCenter: parent.verticalCenter
                     }
+                    CheckBox {
+                        id: metadataSwitch
+                        checked: metadataEnabled
+                        text: "Metadata collection enabled"
+                        anchors {
+                            right: removeButton.left
+                            rightMargin: Units.dp(16)
+                        }
+
+                        onCheckedChanged: {
+                            folderModel.setProperty(index, "metadataEnabled", metadataSwitch.checked)
+                        }
+                    }
+
                 }
             }
 
-            function addFolder(folderPath) {
+            function addFolder(folderPath, metadataEnabled) {
                 folderModel.append({
-                                       folderPath: folderPath.toString()
+                                       folderPath: folderPath.toString(),
+                                       metadataEnabled: metadataEnabled,
                                    })
             }
 
@@ -209,7 +245,7 @@ Page {
                                                              "")
                     // unescape html codes like '%23' for '#'
                     var cleanPath = decodeURIComponent(path)
-                    galleriesTab.addFolder(cleanPath)
+                    galleriesTab.addFolder(cleanPath, true)
                 }
             }
 

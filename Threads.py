@@ -125,12 +125,13 @@ class GalleryThread(BaseThread):
                 else:
                     metadata_map[id] = [metadata]
             for gallery in db_gallery_list:
-                if not os.path.exists(gallery.get("path")) and not gallery["dead"]:
+                gallery["path"] = Utils.normalize_path(gallery["path"])
+                if not os.path.exists(gallery["path"]) and not gallery["dead"]:
                     session.execute(
                         update(Database.Gallery).where(
                             Database.Gallery.id == gallery["id"]).values({"dead": True}))
                     continue
-                elif os.path.exists(gallery.get("path")) and gallery["dead"]:
+                elif os.path.exists(gallery["path"]) and gallery["dead"]:
                     session.execute(
                         update(Database.Gallery).where(
                             Database.Gallery.id == gallery["id"]).values({"dead": False}))
@@ -153,9 +154,7 @@ class GalleryThread(BaseThread):
     def find_galleries(self):
         candidates = []
         self.logger.info("Starting search for new galleries.")
-        paths = map(os.path.normpath, map(os.path.expanduser,
-                                          self.parent.dirs))
-        for path in paths:
+        for path in self.parent.folders[:]:
             for base_folder, folders, files in scandir.walk(path):
                 images = []
                 for f in files:
@@ -186,7 +185,7 @@ class GalleryThread(BaseThread):
         invalid_files = []
         global_queue = queue.Queue()
         for candidate in candidates:
-            candidate["path"] = os.path.normpath(candidate["path"])
+            candidate["path"] = Utils.normalize_path(candidate["path"])
             if candidate["path"] not in self.existing_paths:
                 global_queue.put(candidate)
                 self.existing_paths.append(candidate["path"])
@@ -234,11 +233,9 @@ class GalleryThread(BaseThread):
                 gallery_obj = None
                 self.logger.error("%s gallery got unhandled exception" % candidate, exc_info=True)
             if candidate.get("loaded") and not gallery_obj:
-                dead_galleries.append(candidate["id"])
+                dead_galleries.append(candidate["json"]["id"])
         data_queue.put(galleries)
         error_queue.put(errors(invalid_files, dead_galleries))
-
-
 
 
 class ImageThread(BaseThread):
@@ -305,7 +302,7 @@ class SearchThread(BaseThread):
     API_URL = "http://exhentai.org/api.php"
     BASE_REQUEST = {"method": "gdata", "gidlist": [], "namespace": 1}
     API_MAX_ENTRIES = 25
-    API_ENTRIES = 3
+    API_ENTRIES = 10
 
     def __init__(self, parent, **kwargs):
         super(SearchThread, self).__init__(parent)

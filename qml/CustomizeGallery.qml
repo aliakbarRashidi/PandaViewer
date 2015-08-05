@@ -237,4 +237,5 @@ Page {
             mainWindow.setGalleryImage(gallery.dbUUID, cleanPath.toString())
         }
     }
+
 }

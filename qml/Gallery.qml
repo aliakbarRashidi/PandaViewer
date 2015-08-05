@@ -151,7 +151,8 @@ Card {
                     text: "Delete"
                     onClicked: {
                         menuDropdown.close()
-                        removeGallery()
+                        deleteSnackbar.open("Deleted " + title)
+//                        removeGallery()
                     }
                 }
 
@@ -218,5 +219,12 @@ Card {
                 starRating.starClicked.connect(updateRating)
             }
         }
+    }
+
+    Snackbar {
+        id: deleteSnackbar
+        duration: 10000
+        buttonText: "Undo"
+        fullWidth: true
     }
 }
