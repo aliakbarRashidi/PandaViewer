@@ -151,8 +151,14 @@ Card {
                     text: "Delete"
                     onClicked: {
                         menuDropdown.close()
-                        deleteSnackbar.open("Deleted " + title)
-//                        removeGallery()
+                        if (mainWindow.settings["confirm_delete"]) {
+                            confirmDeleteDialog.show()
+                        }
+
+                        else {
+                            removeGallery()
+                        }
+
                     }
                 }
 
@@ -221,10 +227,20 @@ Card {
         }
     }
 
-    Snackbar {
-        id: deleteSnackbar
-        duration: 10000
-        buttonText: "Undo"
-        fullWidth: true
+    Dialog {
+        id: confirmDeleteDialog
+        title: "Confirm deletion"
+        positiveButtonText: "Delete"
+        Label {
+            anchors {
+                left: parent.left
+                right: parent.right
+            }
+
+            text: "This will delete the gallery from your harddrive.\n\nYou will be able to restore it from your OS's recyling bin if needed."
+            wrapMode: Text.WordWrap
+        }
+        onAccepted: removeGallery()
     }
+
 }

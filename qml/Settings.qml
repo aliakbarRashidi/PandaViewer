@@ -38,9 +38,12 @@ Page {
 
     function saveSettings() {
         mainWindow.settings["folders"] = []
-        mainWindow.settings["folder_metadata_map"] = {}
+        mainWindow.settings["folder_metadata_map"] = {
+
+        }
         mainWindow.settings["exPassHash"] = exPassHash.value
         mainWindow.settings["exUserID"] = exUserID.value
+        mainWindow.settings["confirm_delete"] = confirmDeleteSwitch.checked
         for (var i = 0; i < folderModel.count; ++i) {
             var folder = folderModel.get(i)
             mainWindow.settings["folders"].push(folder.folderPath)
@@ -52,6 +55,7 @@ Page {
     function setSettings() {
         exPassHash.value = mainWindow.settings["exPassHash"]
         exUserID.value = mainWindow.settings["exUserID"]
+        confirmDeleteSwitch.checked = mainWindow.settings["confirm_delete"]
         for (var i = 0; i < mainWindow.settings["folders"].length; ++i) {
             var folder = mainWindow.settings["folders"][i]
             var metadataEnabled = mainWindow.settings["folder_metadata_map"][folder]
@@ -79,6 +83,20 @@ Page {
                 anchors {
                     fill: parent
                     margins: Units.dp(16)
+                }
+
+                ListItem.Subheader {
+                    text: "Misc"
+                }
+
+                ListItem.Subtitled {
+                    text: "Enable gallery deletion confirmation"
+                    secondaryItem: Switch {
+                        id: confirmDeleteSwitch
+                        anchors.verticalCenter: parent.verticalCenter
+                    }
+
+                    onClicked: confirmDeleteSwitch.checked = !confirmDeleteSwitch.checked
                 }
 
                 ListItem.Subheader {
@@ -146,25 +164,24 @@ Page {
             }
 
 
-//                        Label {
-//                            anchors {
-//                                left: parent.left
-//                            }
-//                            text: "Path"
-//                            color: Theme.light.subTextColor
-//                            style: "body1"
-//                        }
+            //                        Label {
+            //                            anchors {
+            //                                left: parent.left
+            //                            }
+            //                            text: "Path"
+            //                            color: Theme.light.subTextColor
+            //                            style: "body1"
+            //                        }
 
-//                        Label {
-//                            anchors {
-//                                right: parent.right
-//                            }
+            //                        Label {
+            //                            anchors {
+            //                                right: parent.right
+            //                            }
 
-//                            text: "Enable metadata collection          "
-//                            color: Theme.light.subTextColor
-//                            style: "body1"
-//                        }
-
+            //                            text: "Enable metadata collection          "
+            //                            color: Theme.light.subTextColor
+            //                            style: "body1"
+            //                        }
             ListView {
                 id: folderView
 
@@ -173,7 +190,6 @@ Page {
                     margins: Units.dp(16)
                 }
                 model: folderModel
-
 
                 delegate: RowLayout {
                     id: row
@@ -216,17 +232,17 @@ Page {
                         }
 
                         onCheckedChanged: {
-                            folderModel.setProperty(index, "metadataEnabled", metadataSwitch.checked)
+                            folderModel.setProperty(index, "metadataEnabled",
+                                                    metadataSwitch.checked)
                         }
                     }
-
                 }
             }
 
             function addFolder(folderPath, metadataEnabled) {
                 folderModel.append({
                                        folderPath: folderPath.toString(),
-                                       metadataEnabled: metadataEnabled,
+                                       metadataEnabled: metadataEnabled
                                    })
             }
 
