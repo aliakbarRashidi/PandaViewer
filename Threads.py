@@ -89,11 +89,13 @@ class GalleryThread(BaseThread):
         super(GalleryThread, self).__init__(parent)
         self.signals = self.Signals()
         self.signals.end.connect(self.parent.find_galleries_done)
+        self.signals.folder.connect(self.parent.set_scan_folder)
         self.existing_paths = [os.path.normpath(g.path) for g in self.parent.galleries]
         self.loaded = False
 
     class Signals(QtCore.QObject):
         end = QtCore.pyqtSignal(list)
+        folder = QtCore.pyqtSignal(str)
 
     def _run(self):
         while True:
@@ -157,6 +159,7 @@ class GalleryThread(BaseThread):
         for path in self.parent.folders[:]:
             for base_folder, folders, files in scandir.walk(path):
                 images = []
+                self.signals.folder.emit(base_folder)
                 for f in files:
                     ext = os.path.splitext(f)[-1].lower()
                     if ext in FolderGallery.IMAGE_EXTS:
@@ -210,6 +213,11 @@ class GalleryThread(BaseThread):
         self.signals.end.emit(galleries)
         if invalid_files:
             raise Exceptions.UnknownArchiveErrorMessage(invalid_files)
+        for gallery in galleries:
+            db_uuid = gallery.generate_uuid()
+            if gallery.db_uuid != db_uuid:
+                gallery.db_uuid = db_uuid
+                gallery.save_metadata()
 
     def init_galleries(self, global_queue, data_queue, error_queue):
         galleries = []
@@ -220,6 +228,7 @@ class GalleryThread(BaseThread):
         while not global_queue.empty():
             try:
                 candidate = global_queue.get_nowait()
+                self.signals.folder.emit(candidate["path"])
                 gallery_obj = Gallery.get_class_from_type(candidate["type"])(**candidate)
                 galleries.append(gallery_obj)
             except queue.Empty:

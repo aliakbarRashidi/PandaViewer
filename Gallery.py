@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 import os
 from os.path import splitext
+import subprocess
 import hashlib
 import json
 import re
@@ -205,7 +206,12 @@ class Gallery(GalleryBoilerplate):
             if db_gallery:
                 self.db_id = db_gallery[0]["id"]
                 session.execute(update(Database.Gallery).where(
-                    Database.Gallery.id == self.db_id).values({"path": self.location}))
+                    Database.Gallery.id == self.db_id).values(
+                    {
+                        "path": self.location,
+                        "dead": False,
+                    }
+                ))
         if not self.db_id:
             self.db_id = self.create_in_db()
         return self.db_id
@@ -248,22 +254,14 @@ class Gallery(GalleryBoilerplate):
 
     def load_metadata(self):
         with Database.get_session(self) as session:
-            db_gallery = session.query(Database.Gallery).filter(Database.Gallery.id == self.db_id)[0]
-            self.thumbnail_path = db_gallery.thumbnail_path
-            self.image_hash = db_gallery.image_hash
-            self.db_uuid = db_gallery.uuid
-            self.read_count = db_gallery.read_count
-            self.last_read = db_gallery.last_read or 0
-            self.time_added = db_gallery.time_added
-            if isinstance(self, ArchiveGallery):
-                self.archive_file = db_gallery.path
-                self.path = os.path.dirname(self.archive_file)
-            else:
-                self.path = db_gallery.path
-            for metadata in db_gallery.metadata_collection:
-                self.metadata[metadata.name] = json.loads(metadata.json)
-            db_gallery.dead = False
-            session.add(db_gallery)
+            db_gallery = list(map(dict,
+                                  session.execute(select([Database.Gallery]).where(
+                                      Database.Gallery.id == self.db_id))))[0]
+
+            db_metadata = list(map(dict, session.execute(select([Database.Metadata]).where(
+                Database.Metadata.gallery_id == self.db_id))))
+        db_gallery["metadata"] = {m["name"]: json.loads(m["json"]) for m in db_metadata}
+        self.load_from_json(db_gallery)
 
     def load_from_json(self, gallery_json):
         self.thumbnail_path = gallery_json.get("thumbnail_path")
@@ -597,6 +595,12 @@ class ArchiveGallery(Gallery):
     def generate_archive_hash(self):
         with open(self.archive_file, "rb") as archive:
             return self.generate_hash(archive)
+
+    def open_folder(self):
+        if os.name == "nt":
+            subprocess.call("explorer.exe /select, \"%s\"" % self.archive_file)
+        else:
+            super(ArchiveGallery, self).open_folder()
 
 
 class ZipGallery(ArchiveGallery):

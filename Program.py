@@ -264,6 +264,7 @@ class Program(QtWidgets.QApplication, Logger):
         self.app_window.setSettings({"exUserID": self.member_id,
                                      "exPassHash": self.pass_hash,
                                      "folders": self.folders,
+                                     "confirm_delete": self.confirm_delete,
                                      "folder_metadata_map": self.folder_metadata_map,
                                      })
 
@@ -279,16 +280,21 @@ class Program(QtWidgets.QApplication, Logger):
     def update_config(self, config): # TODO replace config with ini file, switch qml from camel case
         self.logger.info("Updating config.")
         self.folders = config.property("folders").toVariant()
+        self.confirm_delete = config.property("confirm_delete").toBool()
         folder_metadata_map = config.property("folder_metadata_map").toVariant()
         for key in folder_metadata_map:
             if folder_metadata_map.get(key) != self.folder_metadata_map.get(key):
                 self.folder_metadata_map = folder_metadata_map
                 self.set_auto_metadata_collection()
                 break
+        self.folder_metadata_map = folder_metadata_map
         self.member_id = config.property("exUserID").toString()
         self.pass_hash = config.property("exPassHash").toString()
         RequestManager.COOKIES = self.cookies
         self.save_config()
+
+    def set_scan_folder(self, folder):
+        self.app_window.setScanFolder(folder)
 
     def set_auto_metadata_collection(self, galleries=None):
         galleries = galleries or self.galleries

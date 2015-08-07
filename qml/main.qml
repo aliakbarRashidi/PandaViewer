@@ -38,12 +38,16 @@ ApplicationWindow {
     function setScanningMode(val) {
         scanningModeOn = val
         scanningModeSet(val)
+        if (!scanningModeOn) {
+            snackbar.opened = false
+        }
+
     }
 
     function setSearchMode(mode) {
         searchModeOn = mode
         if (!mode) {
-            metadataSnackbar.opened = false
+            snackbar.opened = false
         }
     }
 
@@ -56,7 +60,7 @@ ApplicationWindow {
     }
 
     function setCurrentMetadataGallery(galleryName) {
-        metadataSnackbar.open("Getting metadata for " + galleryName)
+        snackbar.open("Getting metadata for " + galleryName)
     }
 
     signal scanGalleries
@@ -100,6 +104,10 @@ ApplicationWindow {
         if (tags.length === 0) {
             autoCompleteDropdown.close()
         }
+    }
+
+    function setScanFolder(folder) {
+        snackbar.open("Scanning " + folder)
     }
 
     function setSettings(settings) {
@@ -633,9 +641,8 @@ ApplicationWindow {
             }
         }
     }
-
     Snackbar {
-        id: metadataSnackbar
+        id: snackbar
         duration: 1000000
         buttonText: "Dismiss"
         onClicked: visible = false
