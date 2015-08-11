@@ -6,6 +6,8 @@ import random
 from Logger import Logger
 import Exceptions
 import threading
+from Config import config
+from copy import deepcopy
 
 
 class RequestManager(Logger):
@@ -17,27 +19,21 @@ class RequestManager(Logger):
     SEQ_TIME_DIFF = 10
     SALT_BASE = 10 ** 4
     SALT_MAX_MULTI = 2
-    COOKIES = {"ipb_member_id": "", "ipb_pass_hash": "", "uconfig": ""}
+    MEMBER_ID_KEY = "ipb_member_id"
+    PASS_HASH_KEY = "ipb_pass_hash"
+    COOKIES = {"uconfig": ""}
     HEADERS = {"User-Agent": "Mozilla/5.0 (X11; Linux x86_64; rv:30.0) Gecko/20100101 Firefox/30.0"}  # No idea if this actually helps
     count = 0
     prevtime = 0
+    config = None
     lock = threading.Lock()
 
     @property
-    def id(self):
-        return self.COOKIES["ipb_member_id"]
-
-    @id.setter
-    def id(self, val):
-        self.COOKIES["ipb_member_id"] = val
-
-    @property
-    def pwhash(self):
-        return self.COOKIES["ipb_pass_hash"]
-
-    @pwhash.setter
-    def pwhash(self, val):
-        self.COOKIES["ipb_pass_hash"] = val
+    def cookies(self):
+        cookies = deepcopy(self.COOKIES)
+        cookies[self.MEMBER_ID_KEY] = config.ex_member_id
+        cookies[self.PASS_HASH_KEY] = config.ex_pass_hash
+        return cookies
 
     def rest(self, method, url, **kwargs):
         try:
@@ -71,10 +67,7 @@ class RequestManager(Logger):
                              (method, url, payload))
             self.prevtime = time.time()
             response = getattr(requests, method)(url, data=payload, headers=self.HEADERS,
-                                                 cookies=self.COOKIES, **kwargs)
-            # except TypeError:
-            #     response = getattr(requests,
-            #                        method)(url, cookies=self.COOKIES, **kwargs)
+                                                 cookies=self.cookies, **kwargs)
             if self.validate_response(response):
                 break
             else:

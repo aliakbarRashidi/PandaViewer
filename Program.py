@@ -8,7 +8,6 @@ from PyQt5 import QtNetwork
 from PyQt5 import QtCore
 from time import strftime
 from Logger import Logger
-from RequestManager import RequestManager
 from operator import attrgetter
 import sys
 import os
@@ -22,16 +21,13 @@ import Database
 from Utils import Utils
 from Gallery import Gallery
 from profilehooks import profile
+from Config import config
 
 
 class Program(QtWidgets.QApplication, Logger):
-
     PAGE_SIZE = 100
     BUG_PAGE = "https://github.com/seanegoodwin/pandaviewer/issues"
-    CONFIG_DIR = os.path.expanduser("~/.lsv")
-    THUMB_DIR = os.path.join(CONFIG_DIR, "thumbs")
-    DEFAULT_CONFIG = {"dirs": [], "cookies": {"ipb_member_id": "",
-                                              "ipb_pass_hash": ""}}
+    THUMB_DIR = Utils.convert_from_relative_lsv_path("thumbs")
     QML_PATH = os.path.join(os.path.abspath("."), "qml/")
     MAX_TAG_RETURN_COUNT = 5
 
@@ -51,8 +47,6 @@ class Program(QtWidgets.QApplication, Logger):
         super(Program, self).__init__(args)
 
         self.tags = []
-        self.threads = {}
-        self.config = {}
         self.pages = [[]]
         self.galleries = []
         self.version = "0.1"  # Most likely used for db changes only
@@ -90,13 +84,12 @@ class Program(QtWidgets.QApplication, Logger):
 
         self.app_window.getGalleryImageFolder.connect(self.get_gallery_image_folder)
         self.app_window.setGalleryImage.connect(self.set_gallery_image)
-
-        self.load_config()
-        self.app_window.setUISort.emit(self.sort_type, 1 if self.sort_mode_reversed else 0)
+        self.app_window.setUISort.emit(config.sort_type, 1 if config.sort_mode_reversed else 0)
         self.completer_line = QtWidgets.QLineEdit()
         self.completer_line.hide()
         self.setup_completer()
         self.setWindowIcon(QtGui.QIcon("icon.ico"))
+        self.set_ui_config()
         self.app_window.show()
         self.setup_threads()
 
@@ -107,9 +100,9 @@ class Program(QtWidgets.QApplication, Logger):
         self.completer_line.setCompleter(self.completer)
 
     def set_sorting(self, sort_type, reversed):
-        self.sort_type = sort_type
-        self.sort_mode_reversed = reversed
-        self.save_config()
+        config.sort_type = sort_type
+        config.sort_mode_reversed = reversed
+        config.save()
         self.sort()
 
     def update_search(self, search_text):
@@ -120,7 +113,7 @@ class Program(QtWidgets.QApplication, Logger):
         self.app_window.setGallery.emit(gallery.ui_uuid, gallery.get_json())
 
     def remove_gallery_by_uuid(self, uuid):
-        gallery = self.get_gallery_by_uuid(uuid)
+        gallery = self.get_gallery_by_ui_uuid(uuid)
         gallery.mark_for_deletion()
         self.current_page.remove(gallery)
         self.setup_tags()
@@ -135,7 +128,7 @@ class Program(QtWidgets.QApplication, Logger):
         tags.sort(key=len)
         self.app_window.setTags(tags[:self.MAX_TAG_RETURN_COUNT])
 
-    def get_gallery_by_uuid(self, uuid):
+    def get_gallery_by_ui_uuid(self, uuid):
         """
         :rtype Gallery
         """
@@ -143,56 +136,30 @@ class Program(QtWidgets.QApplication, Logger):
         return next(g for g in self.current_page if g.ui_uuid == uuid)
 
     def update_gallery_rating(self, uuid, rating):
-        self.get_gallery_by_uuid(uuid).set_rating(rating)
+        self.get_gallery_by_ui_uuid(uuid).set_rating(rating)
 
     def get_gallery_image_folder(self, uuid):
         self.app_window.setGalleryImageFolder.emit(uuid,
-                                                   self.get_gallery_by_uuid(uuid).image_folder)
+                                                   self.get_gallery_by_ui_uuid(uuid).image_folder)
 
     def set_gallery_image(self, uuid, image_path):
-        gallery = self.get_gallery_by_uuid(uuid)
-        gallery.generate_thumbnail(image_path)
-        gallery.update_ui_gallery()
+        self.get_gallery_by_ui_uuid(uuid).set_thumbnail_source(image_path)
 
     def open_gallery(self, uuid):
-        self.get_gallery_by_uuid(uuid).open_file()
+        self.get_gallery_by_ui_uuid(uuid).open()
 
     def open_gallery_folder(self, uuid):
-        self.get_gallery_by_uuid(uuid).open_folder()
+        self.get_gallery_by_ui_uuid(uuid).open_folder()
 
     def open_on_ex(self, uuid):
-        self.get_gallery_by_uuid(uuid).open_on_ex()
+        self.get_gallery_by_ui_uuid(uuid).open_on_ex()
 
     def save_gallery_customization(self, uuid, gallery):
-        self.get_gallery_by_uuid(uuid).save_customization(gallery)
+        self.get_gallery_by_ui_uuid(uuid).save_customization(gallery)
 
     def exec_(self):
         self.find_galleries(initial=True)
         return super(Program, self).exec_()
-
-    @property
-    def sort_type(self):
-         return self.config.get("sort_type", self.SortMap.NameSort)
-
-    @sort_type.setter
-    def sort_type(self, val):
-         self.config["sort_type"] = val
-
-    @property
-    def sort_mode_reversed(self):
-        return self.config.get("sort_mode_reversed", False)
-
-    @sort_mode_reversed.setter
-    def sort_mode_reversed(self, val):
-        self.config["sort_mode_reversed"] = val
-        
-    @property
-    def confirm_delete(self):
-        return self.config.get("confirm_delete", True)
-
-    @confirm_delete.setter
-    def confirm_delete(self, val):
-        self.config["confirm_delete"] = val
 
     @property
     def current_page(self):
@@ -205,93 +172,20 @@ class Program(QtWidgets.QApplication, Logger):
     def page_count(self):
         return len(self.pages)
 
-    @property
-    def member_id(self):
-        return self.config["cookies"]["ipb_member_id"]
-
-    @member_id.setter
-    def member_id(self, val):
-        self.config["cookies"]["ipb_member_id"] = val
-
-    @property
-    def pass_hash(self):
-        return self.config["cookies"]["ipb_pass_hash"]
-
-    @pass_hash.setter
-    def pass_hash(self, val):
-        self.config["cookies"]["ipb_pass_hash"] = val
-
-    @property
-    def folders(self):
-        return list(map(Utils.normalize_path, self.config["dirs"]))
-
-    @folders.setter
-    def folders(self, val):
-        self.config["dirs"] = val
-
-    @property
-    def folder_metadata_map(self):
-        return self.config.get("folder_metadata_map", {})
-
-    @folder_metadata_map.setter
-    def folder_metadata_map(self, val):
-        self.config["folder_metadata_map"] = val
-
-    @property
-    def cookies(self):
-        return self.config["cookies"]
-
-    def load_config(self):
-        self.logger.debug("Loading config from db.")
-        with Database.get_session(self) as session:
-            db_config = session.query(Database.Config)
-            if db_config.count() == 0:
-                self.config = self.DEFAULT_CONFIG
-                new_config = Database.Config()
-                new_config.json = json.dumps(self.config)
-                new_config.version = self.version
-                session.add(new_config)
-                session.commit()
-            else:
-                assert db_config.count() == 1
-                db_config = db_config[0]
-                self.config = json.loads(db_config.json)
-                self.version = db_config.version
-        RequestManager.COOKIES = self.config["cookies"]
-        self.set_ui_config()
-
     def set_ui_config(self):
-        self.app_window.setSettings({"exUserID": self.member_id,
-                                     "exPassHash": self.pass_hash,
-                                     "folders": self.folders,
-                                     "confirm_delete": self.confirm_delete,
-                                     "folder_metadata_map": self.folder_metadata_map,
-                                     })
+        self.app_window.setSettings(config.get_ui_config())
+        # self.app_window.setSettings(
+        #     {
+        #         "exUserID": Config.ex_member_id,
+        #         "exPassHash": Config.ex_pass_hash,
+        #         "folders": Config.folders,
+        #         "confirm_delete": Config.confirm_delete,
+        #     })
 
-    def save_config(self):
-        self.logger.debug("Save config to db.")
-        with Database.get_session(self) as session:
-            db_config = session.query(Database.Config)[0]
-            db_config.json = str(json.dumps(self.config, ensure_ascii=False))
-            db_config.version = self.version
-            session.add(db_config)
+    def update_config(self, ui_config):
+        if config.update_from_ui_config(ui_config):
+            self.set_auto_metadata_collection()
         self.sort()
-
-    def update_config(self, config): # TODO replace config with ini file, switch qml from camel case
-        self.logger.info("Updating config.")
-        self.folders = config.property("folders").toVariant()
-        self.confirm_delete = config.property("confirm_delete").toBool()
-        folder_metadata_map = config.property("folder_metadata_map").toVariant()
-        for key in folder_metadata_map:
-            if folder_metadata_map.get(key) != self.folder_metadata_map.get(key):
-                self.folder_metadata_map = folder_metadata_map
-                self.set_auto_metadata_collection()
-                break
-        self.folder_metadata_map = folder_metadata_map
-        self.member_id = config.property("exUserID").toString()
-        self.pass_hash = config.property("exPassHash").toString()
-        RequestManager.COOKIES = self.cookies
-        self.save_config()
 
     def set_scan_folder(self, folder):
         self.app_window.setScanFolder(folder)
@@ -299,9 +193,10 @@ class Program(QtWidgets.QApplication, Logger):
     def set_auto_metadata_collection(self, galleries=None):
         galleries = galleries or self.galleries
         for gallery in self.filter_galleries(galleries):
-            matching_dir = Utils.get_parent_folder(self.folders, gallery.path)
+            matching_dir = Utils.get_parent_folder(config.folders, gallery.path)
             assert matching_dir
-            ex_auto_collection = self.folder_metadata_map.get(matching_dir, True)
+            ex_auto_collection = config.folder_options.get(matching_dir,
+                                                           {}).get(config.AUTO_METADATA_KEY, True)
             if ex_auto_collection != gallery.ex_auto_collection:
                 gallery.ex_auto_collection = ex_auto_collection
                 gallery.save_metadata()
@@ -366,14 +261,9 @@ class Program(QtWidgets.QApplication, Logger):
         return False
 
     def setup_threads(self):
-        self.threads["gallery"] = Threads.GalleryThread(self)
-        self.threads["gallery"].start()
-        self.threads["image"] = Threads.ImageThread(self)
-        self.threads["image"].start()
-        self.threads["metadata"] = Threads.SearchThread(self)
-        self.threads["metadata"].start()
-        self.threads["duplicate"] = Threads.DuplicateFinderThread(self)
-        self.threads["duplicate"].start()
+        for thread in Threads.DAEMON_THREADS:
+            thread.setup(self)
+            thread.start()
 
     def setup_tags(self):
         tags = []
@@ -397,7 +287,7 @@ class Program(QtWidgets.QApplication, Logger):
     def find_galleries(self, initial=False):
         self.app_window.setScanningMode(True)
         self.logger.debug("Sending start signal to gallery thread")
-        self.threads["gallery"].queue.put(None)
+        Threads.gallery_thread.queue.put(None)
 
     def find_galleries_done(self, galleries):
         self.app_window.setScanningMode(False)
@@ -434,7 +324,7 @@ class Program(QtWidgets.QApplication, Logger):
 
     def generate_images(self, galleries):
         self.app_window.setScanningMode(True)
-        self.threads["image"].queue.put(galleries)
+        Threads.image_thread.queue.put(galleries)
 
     def image_thread_done(self):
         self.app_window.setScanningMode(False)
@@ -449,12 +339,12 @@ class Program(QtWidgets.QApplication, Logger):
                 for gallery in galleries:
                     gallery.force_metadata = True
         except (ValueError, TypeError):
-            gallery = self.get_gallery_by_uuid(uuid)
+            gallery = self.get_gallery_by_ui_uuid(uuid)
             gallery.force_metadata = True
             galleries = [gallery]
         self.logger.debug("Starting metadata thread")
         self.app_window.setSearchMode(True)
-        self.threads["metadata"].queue.put(galleries)
+        Threads.search_thread.queue.put(galleries)
 
     def set_current_metadata_gallery(self, gallery):
         self.app_window.setCurrentMetadataGallery(gallery.title)
@@ -470,7 +360,7 @@ class Program(QtWidgets.QApplication, Logger):
 
     def remove_duplicates(self):
         self.app_window.setScanningMode(True)
-        self.threads["duplicate"].queue.put(self.filter_galleries(self.galleries))
+        Threads.duplicate_thread.queue.put(self.filter_galleries(self.galleries))
 
     def duplicate_thread_done(self):
         self.app_window.setScanningMode(False)
@@ -483,20 +373,20 @@ class Program(QtWidgets.QApplication, Logger):
 
     def sort(self):
         key = None
-        if self.sort_type == self.SortMap.NameSort:
+        if config.sort_type == self.SortMap.NameSort:
             key = attrgetter("sort_name")
-        elif self.sort_type == self.SortMap.LastReadSort:
+        elif config.sort_type == self.SortMap.LastReadSort:
             key = attrgetter("last_read")
-        elif self.sort_type == self.SortMap.RatingSort:
+        elif config.sort_type == self.SortMap.RatingSort:
             key = attrgetter("sort_rating")
-        elif self.sort_type == self.SortMap.ReadCountSort:
+        elif config.sort_type == self.SortMap.ReadCountSort:
             key = attrgetter("read_count")
-        elif self.sort_type == self.SortMap.DateAddedSort:
+        elif config.sort_type == self.SortMap.DateAddedSort:
             key = attrgetter("time_added")
-        elif self.sort_type == self.SortMap.FilePathSort:
+        elif config.sort_type == self.SortMap.FilePathSort:
             key = attrgetter("sort_path")
         assert key
-        self.galleries.sort(key=key, reverse=self.sort_mode_reversed)
+        self.galleries.sort(key=key, reverse=config.sort_mode_reversed)
         self.search()
 
     def switch_page(self, page_num):
@@ -509,7 +399,7 @@ class Program(QtWidgets.QApplication, Logger):
         for gallery in galleries:
             if gallery.expired:
                 continue
-            if not any(Utils.path_exists_under_directory(d, gallery.path) for d in self.folders):
+            if not any(Utils.path_exists_under_directory(d, gallery.path) for d in config.folders):
                 continue
             return_galleries.append(gallery)
         return return_galleries
@@ -524,6 +414,16 @@ class Program(QtWidgets.QApplication, Logger):
         self.app_window.setPageCount(self.page_count)
         self.page_number = 0
         self.app_window.setPage(self.page_number + 1)
+
+    def remove_gallery_and_recalculate_pages(self, gallery):
+        assert gallery in self.current_page
+        self.galleries.remove(gallery)
+        self.current_page.remove(gallery)
+        working_page = self.page_number
+        while working_page < self.page_count:
+            self.pages[working_page].append(self.pages[working_page + 1].pop(0))
+            working_page += 1
+
 
     def thread_exception_handler(self, thread, exception):
         self.exception_hook(*exception)
@@ -541,8 +441,9 @@ class Program(QtWidgets.QApplication, Logger):
 
 
 if __name__ == "__main__":
+    # import locale
+    # locale.setlocale(locale.LC_ALL, "en_US.UTF-8")
     filename = strftime("%Y-%m-%d-%H.%M.%S") + ".log"
-
     logging.basicConfig(handlers=[logging.FileHandler(filename, 'w', 'utf-8')],
                         format="%(asctime)s: %(name)s %(levelname)s %(message)s",
                         level=logging.DEBUG)
@@ -550,7 +451,6 @@ if __name__ == "__main__":
     if os.name == "nt":
         import ctypes
         ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("pv.ui")
-
     app = Program(sys.argv)
     sys.excepthook = app.exception_hook
     sys.exit(app.exec_())

@@ -21,17 +21,21 @@ from sqlalchemy import select, update
 from Utils import Utils
 from profilehooks import profile
 import multiprocessing
+from Config import config
 
 
 class BaseThread(threading.Thread, Logger):
     dead = False
     THREAD_COUNT = multiprocessing.cpu_count()
 
-    def __init__(self, parent, **kwargs):
+    def __init__(self, **kwargs):
         super(BaseThread, self).__init__()
         self.name = self.__class__.__name__
         self.daemon = True
         self.queue = queue.Queue()
+
+
+    def setup(self, parent):
         self.parent = parent
         self.basesignals = self.BaseSignals()
         self.basesignals.exception.connect(self.parent.thread_exception_handler)
@@ -85,8 +89,8 @@ class BaseThread(threading.Thread, Logger):
 
 class GalleryThread(BaseThread):
 
-    def __init__(self, parent, **kwargs):
-        super(GalleryThread, self).__init__(parent)
+    def setup(self, parent):
+        super(GalleryThread, self).setup(parent)
         self.signals = self.Signals()
         self.signals.end.connect(self.parent.find_galleries_done)
         self.signals.folder.connect(self.parent.set_scan_folder)
@@ -156,7 +160,7 @@ class GalleryThread(BaseThread):
     def find_galleries(self):
         candidates = []
         self.logger.info("Starting search for new galleries.")
-        for path in self.parent.folders[:]:
+        for path in config.folders[:]:
             for base_folder, folders, files in scandir.walk(path):
                 images = []
                 self.signals.folder.emit(base_folder)
@@ -217,7 +221,7 @@ class GalleryThread(BaseThread):
             db_uuid = gallery.generate_uuid()
             if gallery.db_uuid != db_uuid:
                 gallery.db_uuid = db_uuid
-                gallery.save_metadata()
+                gallery.save_metadata(update_ui=False)
 
     def init_galleries(self, global_queue, data_queue, error_queue):
         galleries = []
@@ -246,12 +250,14 @@ class GalleryThread(BaseThread):
         data_queue.put(galleries)
         error_queue.put(errors(invalid_files, dead_galleries))
 
+gallery_thread = GalleryThread()
+
 
 class ImageThread(BaseThread):
     EMIT_FREQ = 5
 
-    def __init__(self, parent, **kwargs):
-        super(ImageThread, self).__init__(parent)
+    def setup(self, parent):
+        super(ImageThread, self).setup(parent)
         self.signals = self.Signals()
         self.signals.end.connect(self.parent.image_thread_done)
         self.signals.gallery.connect(self.parent.set_ui_gallery)
@@ -306,6 +312,7 @@ class ImageThread(BaseThread):
             except Exception:
                 self.logger.error("%s failed to get image" % gallery, exc_info=True)
 
+image_thread = ImageThread()
 
 class SearchThread(BaseThread):
     API_URL = "http://exhentai.org/api.php"
@@ -313,8 +320,8 @@ class SearchThread(BaseThread):
     API_MAX_ENTRIES = 25
     API_ENTRIES = 10
 
-    def __init__(self, parent, **kwargs):
-        super(SearchThread, self).__init__(parent)
+    def setup(self, parent):
+        super(SearchThread, self).setup(parent)
         self.signals = self.Signals()
         self.signals.end.connect(self.parent.get_metadata_done)
         self.signals.gallery.connect(self.parent.update_gallery_metadata)
@@ -377,15 +384,15 @@ class SearchThread(BaseThread):
                 if id == gallery.id:
                     self.signals.gallery.emit(gallery, {"gmetadata": metadata})
                     break
-
+search_thread = SearchThread()
 
 class DuplicateFinderThread(BaseThread):
 
     class Signals(QtCore.QObject):
         end = QtCore.pyqtSignal()
 
-    def __init__(self, parent):
-        super(DuplicateFinderThread, self).__init__(parent)
+    def setup(self, parent):
+        super(DuplicateFinderThread, self).setup(parent)
         self.signals = self.Signals()
         self.signals.end.connect(self.parent.duplicate_thread_done)
 
@@ -404,3 +411,7 @@ class DuplicateFinderThread(BaseThread):
                 duplicate_map[uuid] = [gallery]
         Utils.reduce_gallery_duplicates(duplicate_map)
         self.signals.end.emit()
+
+duplicate_thread = DuplicateFinderThread()
+
+DAEMON_THREADS = [gallery_thread, image_thread, search_thread, duplicate_thread]

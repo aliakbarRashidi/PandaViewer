@@ -38,27 +38,47 @@ Page {
 
     function saveSettings() {
         mainWindow.settings["folders"] = []
-        mainWindow.settings["folder_metadata_map"] = {
+        mainWindow.settings["folder_options"] = {
 
         }
-        mainWindow.settings["exPassHash"] = exPassHash.value
-        mainWindow.settings["exUserID"] = exUserID.value
+        mainWindow.settings["ex_pass_hash"] = exPassHash.value
+        mainWindow.settings["ex_member_id"] = exUserID.value
         mainWindow.settings["confirm_delete"] = confirmDeleteSwitch.checked
+
+        mainWindow.settings["extract_zip"] = extractZipSwitch.checked
+        mainWindow.settings["extract_cbz"] = extractCbzSwitch.checked
+        mainWindow.settings["extract_rar"] = extractRarSwitch.checked
+        mainWindow.settings["extract_cbr"] = extractCbrSwitch.checked
+
+
+
         for (var i = 0; i < folderModel.count; ++i) {
             var folder = folderModel.get(i)
             mainWindow.settings["folders"].push(folder.folderPath)
-            mainWindow.settings["folder_metadata_map"][folder.folderPath] = folder.metadataEnabled
+            var folderOptions = {}
+            folderOptions["auto_metadata"] = folder.metadataEnabled
+            mainWindow.settings["folder_options"][folder.folderPath] = folderOptions
         }
         mainWindow.saveSettings(mainWindow.settings)
     }
 
     function setSettings() {
-        exPassHash.value = mainWindow.settings["exPassHash"]
-        exUserID.value = mainWindow.settings["exUserID"]
+        exPassHash.value = mainWindow.settings["ex_pass_hash"]
+        exUserID.value = mainWindow.settings["ex_member_id"]
         confirmDeleteSwitch.checked = mainWindow.settings["confirm_delete"]
+
+        extractZipSwitch.checked = mainWindow.settings["extract_zip"]
+        extractCbzSwitch.checked = mainWindow.settings["extract_cbz"]
+        extractRarSwitch.checked = mainWindow.settings["extract_rar"]
+        extractCbrSwitch.checked = mainWindow.settings["extract_cbr"]
+
         for (var i = 0; i < mainWindow.settings["folders"].length; ++i) {
             var folder = mainWindow.settings["folders"][i]
-            var metadataEnabled = mainWindow.settings["folder_metadata_map"][folder]
+            var metadataEnabled = true
+            var folderOptions = mainWindow.settings["folder_options"][folder]
+            if (folderOptions !== undefined) {
+                metadataEnabled = folderOptions["auto_metadata"]
+            }
             galleriesTab.addFolder(folder, metadataEnabled)
         }
     }
@@ -86,7 +106,7 @@ Page {
                 }
 
                 ListItem.Subheader {
-                    text: "Misc"
+                    text: "General"
                 }
 
                 ListItem.Subtitled {
@@ -98,6 +118,48 @@ Page {
 
                     onClicked: confirmDeleteSwitch.checked = !confirmDeleteSwitch.checked
                 }
+
+                ListItem.Subheader {
+                    text: "Archives"
+                }
+
+                ListItem.Subtitled {
+                    text: "Extract Zip files before opening"
+                    secondaryItem: Switch {
+                        id: extractZipSwitch
+                        anchors.verticalCenter: parent.verticalCenter
+                    }
+                    onClicked: extractZipSwitch.checked = !extractZipSwitch.checked
+
+                }
+                ListItem.Subtitled {
+                    text: "Extract Cbz files before opening"
+                    secondaryItem: Switch {
+                        id: extractCbzSwitch
+                        anchors.verticalCenter: parent.verticalCenter
+                    }
+                    onClicked: extractCbzSwitch.checked = !extractCbzSwitch.checked
+
+                }
+                ListItem.Subtitled {
+                    text: "Extract Rar files before opening"
+                    secondaryItem: Switch {
+                        id: extractRarSwitch
+                        anchors.verticalCenter: parent.verticalCenter
+                    }
+                    onClicked: extractRarSwitch.checked = !extractRarSwitch.checked
+
+                }
+                ListItem.Subtitled {
+                    text: "Extract Cbr files before opening"
+                    secondaryItem: Switch {
+                        id: extractCbrSwitch
+                        anchors.verticalCenter: parent.verticalCenter
+                    }
+                    onClicked: extractCbrSwitch.checked = !extractCbrSwitch.checked
+
+                }
+
 
                 ListItem.Subheader {
                     text: "ExH Settings"

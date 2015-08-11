@@ -6,12 +6,12 @@ from sqlalchemy.ext.declarative import declarative_base
 import os
 from threading import Lock
 from Logger import Logger
+from Utils import Utils
 
-CONFIG_DIR = os.path.expanduser("~/.lsv")
 DB_NAME = "db.sqlite"
-DATABASE_URI = "sqlite:///" + os.path.join(CONFIG_DIR, DB_NAME)
-DATABASE_FILE = os.path.join(CONFIG_DIR, DB_NAME)
-MIGRATE_REPO = os.path.join(os.path.abspath("."), "migrate_repo/")
+DATABASE_FILE = Utils.convert_from_relative_lsv_path(DB_NAME)
+DATABASE_URI = "sqlite:///" + DATABASE_FILE
+MIGRATE_REPO = Utils.normalize_path(os.path.join(os.path.abspath("."), "migrate_repo/"))
 
 base = declarative_base()
 engine = sqlalchemy.create_engine(DATABASE_URI)
@@ -40,16 +40,14 @@ class Gallery(base):
     dead = sqlalchemy.Column(sqlalchemy.Boolean, default=False)
     path = sqlalchemy.Column(sqlalchemy.Text)
     type = sqlalchemy.Column(sqlalchemy.Integer, nullable=False)
-    thumbnail_path = sqlalchemy.Column(sqlalchemy.Text)
+    #thumbnail_path = sqlalchemy.Column(sqlalchemy.Text)
+    thumbnail_source = sqlalchemy.Column(sqlalchemy.Text, default="0", nullable=False)
     image_hash = sqlalchemy.Column(sqlalchemy.Text)
     uuid = sqlalchemy.Column(sqlalchemy.Text, nullable=False)
     last_read = sqlalchemy.Column(sqlalchemy.Integer)
     read_count = sqlalchemy.Column(sqlalchemy.Integer, default=0, nullable=False)
     time_added = sqlalchemy.Column(sqlalchemy.Integer)
     metadata_collection = sqlalchemy.orm.relationship("Metadata", lazy="joined", backref="gallery")
-
-    def to_json(self):
-        return {c.name: getattr(self, c.name) for c in self.__table__.columns}
 
 
 class Metadata(base):
@@ -58,7 +56,6 @@ class Metadata(base):
     name = sqlalchemy.Column(sqlalchemy.Text, nullable=False)
     json = sqlalchemy.Column(sqlalchemy.Text)
     gallery_id = sqlalchemy.Column(sqlalchemy.Integer, sqlalchemy.ForeignKey("gallery.id"))
-
 
 def setup():
     Database.logger.debug("Setting up database.")
@@ -89,7 +86,6 @@ def get_session(requester, acquire=False):
         if acquire:
             lock.release()
         session.close()
-
 
 if __name__ == "__main__":
     setup()

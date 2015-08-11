@@ -4,6 +4,10 @@ from Logger import Logger
 class Utils(Logger):
 
     @classmethod
+    def convert_from_relative_lsv_path(cls, path):
+        return cls.normalize_path(os.path.join("~/.lsv", path))
+
+    @classmethod
     def path_exists_under_directory(cls, main_directory, sub_directory):
         main_directory = cls.normalize_path(main_directory)
         sub_directory = cls.normalize_path(sub_directory)
@@ -18,7 +22,6 @@ class Utils(Logger):
         candidates = [cls.normalize_path(c) for c in candidates
                       if cls.path_exists_under_directory(c, folder)]
         return max(candidates, key=len)
-
 
     @classmethod
     def file_has_allowed_extension(cls, check_file, allowed_extensions):
