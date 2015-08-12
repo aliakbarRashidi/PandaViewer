@@ -56,6 +56,7 @@ class Program(QtWidgets.QApplication, Logger):
         self.setOrganizationDomain(self.BUG_PAGE)
         self.setApplicationName("PandaViewer")
 
+    def setup(self):
         if not os.path.exists(self.THUMB_DIR):
             os.makedirs(self.THUMB_DIR)
         Database.setup()
@@ -456,4 +457,5 @@ if __name__ == "__main__":
         ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("pv.ui")
     app = Program(sys.argv)
     sys.excepthook = app.exception_hook
+    app.setup()
     sys.exit(app.exec_())

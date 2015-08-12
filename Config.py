@@ -41,7 +41,10 @@ class Config(Logger, SafeConfigParser):
 
     def __init__(self):
         super(Config, self).__init__()
-        self.load()
+        try:
+            self.load()
+        except FileNotFoundError:
+            self.save()
         self.setup()
         self.save()
 
@@ -60,8 +63,6 @@ class Config(Logger, SafeConfigParser):
             for option in self.SECTIONS.get(section):
                 if not self.has_option(section, option):
                     self.set(section, option, "")
-
-
 
     def load(self):
         with codecs.open(self.CONFIG_FILE, "r", encoding="utf8") as file:
