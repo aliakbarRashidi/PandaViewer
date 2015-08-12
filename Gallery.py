@@ -432,6 +432,7 @@ class Gallery(GalleryBoilerplate):
 
     def load_thumbnail(self):
         if not self.has_valid_thumbnail():
+            self.thumbnail_source = self.thumbnail_source or str(0)
             self.generate_thumbnail()
             self.save_metadata()
         self.thumbnail_verified = True
@@ -448,7 +449,7 @@ class Gallery(GalleryBoilerplate):
 
     def has_valid_thumbnail(self):
         thumb_exists = self.thumbnail_path and os.path.exists(self.thumbnail_path)
-        valid = self.thumbnail_source and self.validate_thumbnail_source()
+        valid = self.thumbnail_source is not None and self.validate_thumbnail_source()
         return thumb_exists and valid
 
     def validate_thumbnail_source(self):
