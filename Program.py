@@ -81,7 +81,7 @@ class Program(QtWidgets.QApplication, Logger):
         self.app_window.saveGallery.connect(self.save_gallery_customization)
         self.app_window.searchForDuplicates.connect(self.remove_duplicates)
         self.app_window.closedUI.connect(self.close)
-
+        self.app_window.getDetailedGallery.connect(self.get_detailed_gallery)
         self.app_window.getGalleryImageFolder.connect(self.get_gallery_image_folder)
         self.app_window.setGalleryImage.connect(self.set_gallery_image)
         self.app_window.setUISort.emit(config.sort_type, 1 if config.sort_mode_reversed else 0)
@@ -118,6 +118,9 @@ class Program(QtWidgets.QApplication, Logger):
         self.current_page.remove(gallery)
         self.setup_tags()
 
+    def get_detailed_gallery(self, uuid):
+        self.app_window.openDetailedGallery.emit(self.get_gallery_by_ui_uuid(uuid).get_detailed_json())
+
     def get_tags_from_search(self, search):
         self.completer_line.setText(search)
         self.completer.setCompletionPrefix(search)
@@ -145,8 +148,8 @@ class Program(QtWidgets.QApplication, Logger):
     def set_gallery_image(self, uuid, image_path):
         self.get_gallery_by_ui_uuid(uuid).set_thumbnail_source(image_path)
 
-    def open_gallery(self, uuid):
-        self.get_gallery_by_ui_uuid(uuid).open()
+    def open_gallery(self, uuid, index):
+        self.get_gallery_by_ui_uuid(uuid).open(index)
 
     def open_gallery_folder(self, uuid):
         self.get_gallery_by_ui_uuid(uuid).open_folder()
@@ -312,7 +315,7 @@ class Program(QtWidgets.QApplication, Logger):
     def show_page(self):
         need_images = []
         for gallery in self.current_page:
-            if not gallery.has_valid_thumbnail():
+            if not gallery.thumbnail_verified:
                 need_images.append(gallery)
         if need_images:
             self.generate_images(need_images)

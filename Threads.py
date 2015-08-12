@@ -217,11 +217,7 @@ class GalleryThread(BaseThread):
         self.signals.end.emit(galleries)
         if invalid_files:
             raise Exceptions.UnknownArchiveErrorMessage(invalid_files)
-        for gallery in galleries:
-            db_uuid = gallery.generate_uuid()
-            if gallery.db_uuid != db_uuid:
-                gallery.db_uuid = db_uuid
-                gallery.save_metadata(update_ui=False)
+        management_thread.queue.put(galleries)
 
     def init_galleries(self, global_queue, data_queue, error_queue):
         galleries = []
@@ -251,6 +247,20 @@ class GalleryThread(BaseThread):
         error_queue.put(errors(invalid_files, dead_galleries))
 
 gallery_thread = GalleryThread()
+
+
+class ManagementThread(BaseThread):
+
+    def _run(self):
+        while True:
+            galleries = self.queue.get()
+            for gallery in galleries:
+                db_uuid = gallery.generate_uuid()
+                if gallery.db_uuid != db_uuid:
+                    gallery.db_uuid = db_uuid
+                    gallery.save_metadata(update_ui=False)
+
+management_thread = ManagementThread()
 
 
 class ImageThread(BaseThread):
@@ -414,4 +424,4 @@ class DuplicateFinderThread(BaseThread):
 
 duplicate_thread = DuplicateFinderThread()
 
-DAEMON_THREADS = [gallery_thread, image_thread, search_thread, duplicate_thread]
+DAEMON_THREADS = [gallery_thread, image_thread, search_thread, duplicate_thread, management_thread]

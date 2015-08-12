@@ -72,7 +72,7 @@ ApplicationWindow {
     signal saveSettings(var settings)
 
     signal removeGallery(string uuid)
-    signal openGallery(string uuid)
+    signal openGallery(string uuid, int index)
     signal openGalleryFolder(string uuid)
 
     signal getGalleryImageFolder(string uuid)
@@ -92,8 +92,11 @@ ApplicationWindow {
     signal setUIGallery(int index, var gallery)
     signal setUIGalleries(var galleries)
     signal removeUIGallery(int index, int count)
+    signal getDetailedGallery(string uuid)
     signal setUISort(int sortType, int reversed)
     signal closedUI
+
+    signal openDetailedGallery(var gallery)
 
     function setTags(tags) {
         for (var i = 0; i < tags.length; ++i) {
@@ -144,6 +147,7 @@ ApplicationWindow {
     property string selectedComponent: homeSections[0]
 
     initialPage: Page {
+        id: page
         states: [
             State {
                 when: scanningModeOn
@@ -155,11 +159,9 @@ ApplicationWindow {
             }
         ]
 
-        id: page
         title: "PandaViewer"
         tabs: []
         actionBar.maxActionCount: 6
-
         actionBar.extendedContent: Rectangle {
             id: searchContainer
             visible: false

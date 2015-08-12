@@ -42,6 +42,13 @@ Item {
         mainWindow.setNoSearchResults.connect(galleriesPage.setNoSearchResults)
         mainWindow.setUIGallery.connect(galleriesPage.setUIGallery)
         mainWindow.removeUIGallery.connect(galleriesPage.removeUIGallery)
+        mainWindow.openDetailedGallery.connect(galleriesPage.openDetailedGallery)
+    }
+
+    function openDetailedGallery(gallery) {
+        pageStack.push(Qt.resolvedUrl("CustomizeGallery.qml"), {
+                   gallery: gallery
+                   })
     }
 
     function removeGallery(uuid) {

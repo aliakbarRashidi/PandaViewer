@@ -19,7 +19,8 @@ class Utils(Logger):
 
     @classmethod
     def get_parent_folder(cls, candidates, folder):
-        candidates = [cls.normalize_path(c) for c in candidates
+        candidates = map(cls.normalize_path, candidates)
+        candidates = [c for c in candidates
                       if cls.path_exists_under_directory(c, folder)]
         return max(candidates, key=len)
 

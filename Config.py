@@ -5,6 +5,7 @@ import weakref
 import json
 import codecs
 import os
+import Database
 
 
 
@@ -60,6 +61,8 @@ class Config(Logger, SafeConfigParser):
                 if not self.has_option(section, option):
                     self.set(section, option, "")
 
+
+
     def load(self):
         with codecs.open(self.CONFIG_FILE, "r", encoding="utf8") as file:
             self.read_file(file)
@@ -104,7 +107,7 @@ class Config(Logger, SafeConfigParser):
     @property
     def folders(self):
         folders = self.get("General", "folders") or "[]"
-        return json.loads(folders)
+        return list(map(Utils.normalize_path, json.loads(folders)))
 
     @folders.setter
     def folders(self, value):

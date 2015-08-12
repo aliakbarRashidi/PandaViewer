@@ -23,13 +23,15 @@ Page {
 
     Component.onCompleted: {
         mainWindow.setGallery.connect(customizePage.setGallery)
-        mainWindow.setGalleryImageFolder.connect(customizePage.openGalleryImageFolder)
+        mainWindow.setGalleryImageFolder.connect(
+                    customizePage.openGalleryImageFolder)
         galleryModel.append(gallery)
     }
 
     Component.onDestruction: {
         mainWindow.setGallery.disconnect(customizePage.setGallery)
-        mainWindow.setGalleryImageFolder.disconnect(customizePage.openGalleryImageFolder)
+        mainWindow.setGalleryImageFolder.disconnect(
+                    customizePage.openGalleryImageFolder)
     }
 
     actions: [
@@ -123,11 +125,12 @@ Page {
         }
     }
 
-    Column {
+    ColumnLayout {
         anchors {
             left: galleryContent.right
             top: parent.top
             right: parent.right
+            bottom: parent.bottom
             margins: Units.dp(16)
         }
         spacing: Units.dp(16)
@@ -148,6 +151,7 @@ Page {
                 right: parent.right
             }
             placeholderText: "Custom Title"
+            floatingLabel: true
             text: title
 
             Component.onCompleted: cursorPosition = 0
@@ -218,6 +222,46 @@ Page {
 
             onClicked: exAutoSwitch.checked = !exAutoSwitch.checked
         }
+
+        Label {
+            style: "subheading"
+            text: "Pages"
+            anchors {
+                horizontalCenter: parent.horizontalCenter
+            }
+        }
+
+        ScrollView {
+            Layout.fillHeight: true
+            Layout.fillWidth: true
+            __wheelAreaScrollSpeed: 100
+
+            GridView {
+                anchors.fill: parent
+                cellWidth: Units.dp(200 + 16)
+                cellHeight: Units.dp(300 + 16)
+                model: gallery.files
+                delegate: Component {
+                        Image {
+                            id: pageImage
+                            source: modelData
+                            asynchronous: true
+                            width: 200
+                            height: Math.min(Units.dp(300), implicitHeight)
+                            sourceSize.width: 200
+
+                            MouseArea {
+                                anchors.fill: parent
+                                onClicked: {
+                                    if (mouse.button & Qt.LeftButton) {
+                                        mainWindow.openGallery(gallery.dbUUID, index)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
     }
     FileDialog {
         id: imageDialog
@@ -237,5 +281,4 @@ Page {
             mainWindow.setGalleryImage(gallery.dbUUID, cleanPath.toString())
         }
     }
-
 }

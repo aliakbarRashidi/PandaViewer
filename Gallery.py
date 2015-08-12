@@ -50,6 +50,7 @@ class Gallery(GalleryBoilerplate):
     expired = False
     path = None
     type = None
+    thumbnail_verified = False
 
     class TypeMap(object):
         FolderGallery = 0
@@ -132,23 +133,30 @@ class Gallery(GalleryBoilerplate):
 
     def get_json(self):
         tooltip, lines = self.get_tooltip()
-        tags = ", ".join(self.ctags)
-        exTags = ", ".join(self.extags)
-        ex_url= self.ex_url if self.gid else ""
         return {"title": self.title,
                 "rating": float(self.rating),
                 "tooltip": tooltip,
                 "tooltipLines": lines,
                 "dbUUID": self.ui_uuid,
-                "tags": tags,
-                "exTags": exTags,
-                "exTitle": self.extitle,
-                "fileSize": self.get_file_size(),
-                "fileCount": self.file_count,
-                "exURL": ex_url,
-                "exAuto": self.ex_auto_collection,
                 "hasMetadata": self.gid is not None,
                 "image": Utils.convert_to_qml_path(self.thumbnail_path)}
+
+    def get_detailed_json(self):
+        gallery_json = self.get_json()
+        tags = ", ".join(self.ctags)
+        exTags = ", ".join(self.extags)
+        # "fileSize": self.get_file_size(),
+        # "fileCount": self.file_count,
+        ex_url= self.ex_url if self.gid else ""
+        gallery_json["tags"] = tags
+        gallery_json["exTags"] = exTags
+        gallery_json["exTitle"] = self.extitle
+        gallery_json["exAuto"] = self.ex_auto_collection
+        gallery_json["exURL"] = ex_url
+        gallery_json["files"] = list(map(Utils.convert_to_qml_path, self.files))
+
+
+        return gallery_json
 
     def get_tooltip(self):
         plural = "s" if self.read_count != 1 else ""
@@ -426,6 +434,7 @@ class Gallery(GalleryBoilerplate):
         if not self.has_valid_thumbnail():
             self.generate_thumbnail()
             self.save_metadata()
+        self.thumbnail_verified = True
 
     def set_thumbnail_source(self, thumbnail_source):
         index = self.find_file_index(thumbnail_source)
@@ -453,15 +462,14 @@ class Gallery(GalleryBoilerplate):
                 return False
         return hash == self.image_hash
 
-
-    def open(self):
+    def open(self, index=0):
         self.read_count += 1
         self.last_read = int(time())
         self.save_metadata()
-        self.open_file()
+        self.open_file(index)
 
-    def open_file(self):
-        QtGui.QDesktopServices.openUrl(QtCore.QUrl.fromLocalFile(self.files[0]))
+    def open_file(self, index=0):
+        QtGui.QDesktopServices.openUrl(QtCore.QUrl.fromLocalFile(self.files[index]))
 
 
     def open_on_ex(self):
@@ -617,9 +625,9 @@ class ArchiveGallery(Gallery):
         assert image.loadFromData(self.get_raw_image(index=index).read())
         return image
 
-    def open_file(self):
-        if getattr(config, "extract_" + self.archive_type.lower()):
-            super(ArchiveGallery, self).open_file()
+    def open_file(self, index=0):
+        if getattr(config, "extract_" + self.archive_type.lower()) or index != 0:
+            super(ArchiveGallery, self).open_file(index)
         else:
             QtGui.QDesktopServices.openUrl(QtCore.QUrl.fromLocalFile(self.archive_file))
 

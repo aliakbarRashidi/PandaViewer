@@ -45,7 +45,7 @@ Card {
     }
 
     function openGallery() {
-        mainWindow.openGallery(dbUUID)
+        mainWindow.openGallery(dbUUID, 0)
     }
 
     function openGalleryFolder() {
@@ -141,9 +141,10 @@ Card {
 
                         //Here be deep magic
                         menuDropdown.close()
-                        pageStack.push(Qt.resolvedUrl("CustomizeGallery.qml"), {
-                                           gallery: galleryModel.get(index)
-                                       })
+                        mainWindow.getDetailedGallery(dbUUID)
+//                        pageStack.push(Qt.resolvedUrl("CustomizeGallery.qml"), {
+//                                           gallery: galleryModel.get(index)
+//                                       })
                     }
                 }
 
