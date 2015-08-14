@@ -4,7 +4,6 @@ import QtQuick.Layouts 1.1
 import Material 0.1
 
 Row {
-    id: layout
     property real currentRating
     signal starClicked(real rating)
 
@@ -53,9 +52,22 @@ Row {
             ]
 
             Repeater {
+                id: mouseAreaRepeater
                 model: [0, 1]
-
                 delegate: MouseArea {
+                    Loader {
+                        id: starRatingTooltipLoader
+                        asynchronous: false
+                    }
+
+                    Component {
+                        id: starRatingTooltipComponent
+                        Tooltip {
+                            text: "Rating: " + currentRating
+                            mouseArea: mouseAreaRepeater.itemAt(index)
+                            Component.onCompleted: start()
+                        }
+                    }
                     acceptedButtons: Qt.LeftButton | Qt.RightButton
                     property bool leftArea: modelData == 0
                     anchors {
@@ -65,15 +77,17 @@ Row {
                         right: leftArea ? parent.horizontalCenter : parent.right
                     }
                     hoverEnabled: true
-                    Tooltip {
-                        text: "Rating: " + currentRating
-                        mouseArea: parent
-                    }
                     onEntered: {
+                        starRatingTooltipLoader.sourceComponent = starRatingTooltipComponent
                         starRepeater.currentStarValue
                                 = leftArea ? starIcon.starNum - .5 : starIcon.starNum
                     }
-                    onExited: starRepeater.currentStarValue = currentRating
+                    onExited: {
+                        starRatingTooltipLoader.source = ""
+                        starRepeater.currentStarValue = currentRating
+                    }
+                    onPositionChanged: starRatingTooltipLoader.sourceComponent
+                                       = starRatingTooltipComponent
                     onClicked: {
                         if (mouse.button & Qt.LeftButton) {
                             mouse.accepted = true

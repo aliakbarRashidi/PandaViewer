@@ -226,7 +226,7 @@ Item {
             cellHeight: Units.dp(350 + 16 + 16)
 
             model: delegateModel
-            cacheBuffer: Units.dp((350 + 16) * 100)
+            cacheBuffer: Units.dp((350 + 16) * 25)
 
             //        delegate: Component {
             //            Gallery {

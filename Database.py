@@ -44,6 +44,7 @@ class Gallery(base):
     thumbnail_source = sqlalchemy.Column(sqlalchemy.Text, default="0", nullable=False)
     image_hash = sqlalchemy.Column(sqlalchemy.Text)
     uuid = sqlalchemy.Column(sqlalchemy.Text, nullable=False)
+    mtime_hash = sqlalchemy.Column(sqlalchemy.Text)
     last_read = sqlalchemy.Column(sqlalchemy.Integer)
     read_count = sqlalchemy.Column(sqlalchemy.Integer, default=0, nullable=False)
     time_added = sqlalchemy.Column(sqlalchemy.Integer)

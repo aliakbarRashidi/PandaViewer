@@ -11,27 +11,6 @@ Card {
     width: Units.dp(200)
     flat: false
     property bool customizationEnabled: true
-    Tooltip {
-        text: tooltip
-        mouseArea: imageMouseArea
-        height: Units.dp((40 - 16) + (16 * tooltipLines))
-    }
-
-    MouseArea {
-        id: imageMouseArea
-        acceptedButtons: Qt.LeftButton | Qt.RightButton
-        anchors.fill: parent
-        hoverEnabled: true
-        onClicked: {
-            if (mouse.button & Qt.LeftButton) {
-                openGallery()
-            } else if (mouse.button & Qt.RightButton) {
-                menuLoader.sourceComponent = menuComponent
-                menuLoader.item.open(imageMouseArea, mouseX, mouseY)
-            }
-        }
-    }
-
     anchors {
         margins: 0
     }
@@ -52,38 +31,44 @@ Card {
         mainWindow.openGalleryFolder(dbUUID)
     }
 
-    Label {
-        id: titleText
-        anchors {
-            horizontalCenter: parent.horizontalCenter
-            bottom: bottomRow.top
-            margins: Units.dp(8)
-        }
+    Loader {
+        id: galleryTooltipLoader
+        asynchronous: false
+    }
 
-        text: title
-        width: parent.width - anchors.margins
-        horizontalAlignment: Text.AlignHCenter
-        verticalAlignment: Text.AlignVCenter
-        elide: Text.ElideRight
-        maximumLineCount: 2
-        wrapMode: Text.Wrap
-
+    Component {
+        id: galleryTooltipComponent
         Tooltip {
-            text: titleText.text
-            mouseArea: textMouseArea
-        }
-
-        MouseArea {
-            id: textMouseArea
-            anchors.fill: parent
-            hoverEnabled: true
+            text: tooltip
+            mouseArea: imageMouseArea
+            Component.onCompleted: start()
+            height: Units.dp((40 - 16) + (16 * tooltipLines))
         }
     }
+
+    MouseArea {
+        id: imageMouseArea
+        acceptedButtons: Qt.LeftButton | Qt.RightButton
+        anchors.fill: parent
+        hoverEnabled: true
+        onEntered: galleryTooltipLoader.sourceComponent = galleryTooltipComponent
+        onPositionChanged: galleryTooltipLoader.sourceComponent = galleryTooltipComponent
+        onExited: galleryTooltipLoader.source = ""
+        onClicked: {
+            if (mouse.button & Qt.LeftButton) {
+                openGallery()
+            } else if (mouse.button & Qt.RightButton) {
+                menuLoader.sourceComponent = menuComponent
+                menuLoader.item.open(imageMouseArea, mouseX, mouseY)
+            }
+        }
+    }
+
     Image {
         id: galleryImage
 
         source: image
-        cache: true
+        cache: false
         sourceSize.width: 200
         asynchronous: true
         anchors {
@@ -96,6 +81,46 @@ Card {
         height: Math.min(Units.dp(300), implicitHeight)
     }
 
+    Label {
+        id: titleText
+        anchors {
+            horizontalCenter: parent.horizontalCenter
+            bottom: bottomRow.top
+            //            bottom: parent.bottom
+            margins: Units.dp(8)
+        }
+
+        text: title
+        width: parent.width - anchors.margins
+        horizontalAlignment: Text.AlignHCenter
+        verticalAlignment: Text.AlignVCenter
+        elide: Text.ElideRight
+        maximumLineCount: 2
+        wrapMode: Text.Wrap
+
+        Loader {
+            id: titleTooltipLoader
+            asynchronous: false
+        }
+        Component {
+            id: titleTooltipComponent
+            Tooltip {
+                text: titleText.text
+                mouseArea: textMouseArea
+                Component.onCompleted: start()
+            }
+        }
+
+        MouseArea {
+            id: textMouseArea
+            anchors.fill: parent
+            hoverEnabled: true
+            onEntered: titleTooltipLoader.sourceComponent = titleTooltipComponent
+            onPositionChanged: titleTooltipLoader.sourceComponent = titleTooltipComponent
+            onExited: titleTooltipLoader.source = ""
+        }
+    }
+
     Item {
         id: bottomRow
         height: Units.dp(16)
@@ -105,12 +130,34 @@ Card {
             right: parent.right
             left: parent.left
         }
+        IconButton {
+            id: button
+            iconName: "awesome/ellipsis_v"
+            size: Units.dp(16)
+            anchors {
+                right: parent.right
+                verticalCenter: parent.verticalCenter
+            }
 
-        Loader {
-            id: bottomLoader
-            anchors.fill: parent
-            asynchronous: false
-            sourceComponent: bottomComponent
+            function openDropdown() {
+                menuLoader.sourceComponent = menuComponent
+                menuLoader.item.open(button, button.width, button.height)
+            }
+
+            Component.onCompleted: button.clicked.connect(button.openDropdown)
+        }
+
+        StarRating {
+            id: starRating
+            currentRating: rating
+            anchors {
+                left: parent.left
+                verticalCenter: parent.verticalCenter
+            }
+        }
+
+        Component.onCompleted: {
+            starRating.starClicked.connect(updateRating)
         }
     }
 
@@ -138,13 +185,11 @@ Card {
                     id: editItem
                     text: "Info"
                     onClicked: {
-
-                        //Here be deep magic
                         menuDropdown.close()
                         mainWindow.getDetailedGallery(dbUUID)
-//                        pageStack.push(Qt.resolvedUrl("CustomizeGallery.qml"), {
-//                                           gallery: galleryModel.get(index)
-//                                       })
+                        //                        pageStack.push(Qt.resolvedUrl("CustomizeGallery.qml"), {
+                        //                                           gallery: galleryModel.get(index)
+                        //                                       })
                     }
                 }
 
@@ -154,12 +199,9 @@ Card {
                         menuDropdown.close()
                         if (mainWindow.settings["confirm_delete"]) {
                             confirmDeleteDialog.show()
-                        }
-
-                        else {
+                        } else {
                             removeGallery()
                         }
-
                     }
                 }
 
@@ -192,56 +234,21 @@ Card {
     }
 
     Component {
-        id: bottomComponent
-        Item {
-            anchors.fill: parent
-            IconButton {
-                id: button
-                iconName: "awesome/ellipsis_v"
-                size: Units.dp(16)
-                anchors {
-                    right: parent.right
-                    verticalCenter: parent.verticalCenter
-                }
-
-                function openDropdown() {
-                    menuLoader.sourceComponent = menuComponent
-                    menuLoader.item.open(button, button.width, button.height)
-                }
-
-                Component.onCompleted: button.clicked.connect(
-                                           button.openDropdown)
-            }
-
-            StarRating {
-                id: starRating
-                currentRating: rating
+        id: confirmDeleteDialogComponent
+        Dialog {
+            id: confirmDeleteDialog
+            title: "Confirm deletion"
+            positiveButtonText: "Delete"
+            Label {
                 anchors {
                     left: parent.left
-                    verticalCenter: parent.verticalCenter
+                    right: parent.right
                 }
-            }
 
-            Component.onCompleted: {
-                starRating.starClicked.connect(updateRating)
+                text: "This will delete the gallery from your harddrive.\n\nYou will be able to restore it from your OS's recyling bin if needed."
+                wrapMode: Text.WordWrap
             }
+            onAccepted: removeGallery()
         }
     }
-
-    Dialog {
-        id: confirmDeleteDialog
-        title: "Confirm deletion"
-        positiveButtonText: "Delete"
-        Label {
-            anchors {
-                left: parent.left
-                right: parent.right
-            }
-
-            text: "This will delete the gallery from your harddrive.\n\nYou will be able to restore it from your OS's recyling bin if needed."
-            wrapMode: Text.WordWrap
-        }
-        onAccepted: removeGallery()
-    }
-
 }

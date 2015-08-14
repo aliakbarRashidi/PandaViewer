@@ -20,7 +20,6 @@ import Exceptions
 import Database
 from Utils import Utils
 from Gallery import Gallery
-from profilehooks import profile
 from Config import config
 
 
@@ -60,6 +59,7 @@ class Program(QtWidgets.QApplication, Logger):
         if not os.path.exists(self.THUMB_DIR):
             os.makedirs(self.THUMB_DIR)
         Database.setup()
+
         self.setAttribute(QtCore.Qt.AA_UseOpenGLES, True)
         self.addLibraryPath(self.QML_PATH)
         self.qml_engine = QtQml.QQmlApplicationEngine()
@@ -307,17 +307,19 @@ class Program(QtWidgets.QApplication, Logger):
             self.app_window.setUIGallery.emit(next(index_list), gallery.get_json())
 
         [self.app_window.removeUIGallery.emit(i, 1) for i in list(index_list)[::-1]]
-
         # index_list = list(index_list)
         # if index_list:
         #     self.app_window.removeUIGallery.emit(index_list[0], len(index_list))
+        self.garbage_collect()
+        Threads.image_thread.bg_run_count = 0
+
+    def garbage_collect(self):
+        self.qml_engine.clearComponentCache()
         gc.collect()
+        self.app_window.garbageCollect()
 
     def show_page(self):
-        need_images = []
-        for gallery in self.current_page:
-            if not gallery.thumbnail_verified:
-                need_images.append(gallery)
+        need_images = [g for g in self.current_page if not g.thumbnail_verified]
         if need_images:
             self.generate_images(need_images)
         else:
@@ -427,6 +429,9 @@ class Program(QtWidgets.QApplication, Logger):
         while working_page < self.page_count:
             self.pages[working_page].append(self.pages[working_page + 1].pop(0))
             working_page += 1
+        self.pages = [p for p in self.pages if p]
+        if self.page_count >= self.page_number:
+            self.switch_page(self.page_count)
 
 
     def thread_exception_handler(self, thread, exception):

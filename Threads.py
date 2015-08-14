@@ -12,6 +12,7 @@ import scandir
 import os
 import sys
 import json
+import time
 from Gallery import Gallery, FolderGallery, ZipGallery, RarGallery
 import Exceptions
 import Database
@@ -88,6 +89,7 @@ class BaseThread(threading.Thread, Logger):
 
 
 class GalleryThread(BaseThread):
+    running = False
 
     def setup(self, parent):
         super(GalleryThread, self).setup(parent)
@@ -103,7 +105,9 @@ class GalleryThread(BaseThread):
 
     def _run(self):
         while True:
+            self.running = False
             self.queue.get()
+            self.running = True
             if not self.loaded:
                 self.load_from_db()
             else:
@@ -121,38 +125,41 @@ class GalleryThread(BaseThread):
         self.logger.info("Starting to load galleries from database.")
         candidates = []
         with Database.get_session(self) as session:
-            db_gallery_list = map(dict, session.execute(select([Database.Gallery])))
-            db_metadata_list = map(dict, session.execute(select([Database.Metadata])))
-            metadata_map = {}
-            for metadata in db_metadata_list:
-                id = metadata["gallery_id"]
-                if metadata_map.get(id):
-                    metadata_map[id].append(metadata)
-                else:
-                    metadata_map[id] = [metadata]
-            for gallery in db_gallery_list:
-                gallery["path"] = Utils.normalize_path(gallery["path"])
-                if not os.path.exists(gallery["path"]) and not gallery["dead"]:
+            db_gallery_list = map(dict, session.execute(select([Database.Gallery])).fetchall())
+            db_metadata_list = map(dict, session.execute(select([Database.Metadata])).fetchall())
+        metadata_map = {}
+        for metadata in db_metadata_list:
+            id = metadata["gallery_id"]
+            if metadata_map.get(id):
+                metadata_map[id].append(metadata)
+            else:
+                metadata_map[id] = [metadata]
+        for gallery in db_gallery_list:
+            gallery["path"] = Utils.normalize_path(gallery["path"])
+            path_exists = os.path.exists(gallery["path"])
+            if not path_exists and not gallery["dead"]:
+                with Database.get_session(self) as session:
                     session.execute(
                         update(Database.Gallery).where(
                             Database.Gallery.id == gallery["id"]).values({"dead": True}))
-                    continue
-                elif os.path.exists(gallery["path"]) and gallery["dead"]:
+                continue
+            elif path_exists and gallery["dead"]:
+                with Database.get_session(self) as session:
                     session.execute(
                         update(Database.Gallery).where(
                             Database.Gallery.id == gallery["id"]).values({"dead": False}))
-                    gallery["dead"] = False
-                elif gallery["dead"]:
-                    continue
-                gallery["metadata"] = {}
-                for metadata in metadata_map.get(gallery["id"], []):
-                    gallery["metadata"][metadata["name"]] = json.loads(metadata["json"])
-                candidate = {"path": gallery["path"],
-                             "parent": self.parent,
-                             "json": gallery,
-                             "type": gallery["type"],
-                             "loaded": True}
-                candidates.append(candidate)
+                gallery["dead"] = False
+            elif gallery["dead"]:
+                continue
+            gallery["metadata"] = {}
+            for metadata in metadata_map.get(gallery["id"], []):
+                gallery["metadata"][metadata["name"]] = json.loads(metadata["json"])
+            candidate = {"path": gallery["path"],
+                         "parent": self.parent,
+                         "json": gallery,
+                         "type": gallery["type"],
+                         "loaded": True}
+            candidates.append(candidate)
         self.logger.info("Done loading galleries from database.")
         self.create_from_dict(candidates)
         self.loaded = True
@@ -254,10 +261,14 @@ class ManagementThread(BaseThread):
     def _run(self):
         while True:
             galleries = self.queue.get()
+            time.sleep(5)
             for gallery in galleries:
-                db_uuid = gallery.generate_uuid()
-                if gallery.db_uuid != db_uuid:
-                    gallery.db_uuid = db_uuid
+                while gallery_thread.running:
+                    time.sleep(1)
+                mtime_hash = gallery.generate_mtime_hash()
+                if mtime_hash != gallery.mtime_hash:
+                    gallery.mtime_hash = mtime_hash
+                    gallery.db_uuid = gallery.generate_uuid()
                     gallery.save_metadata(update_ui=False)
 
 management_thread = ManagementThread()
@@ -265,6 +276,11 @@ management_thread = ManagementThread()
 
 class ImageThread(BaseThread):
     EMIT_FREQ = 5
+    WAIT = 5
+    BG_GALLERY_COUNT = 50
+    MAX_BG_RUNS = 10
+    bg_run_count = 0
+
 
     def setup(self, parent):
         super(ImageThread, self).setup(parent)
@@ -278,38 +294,46 @@ class ImageThread(BaseThread):
 
     def _run(self):
         while True:
-            galleries = self.queue.get()
-            self.generate_images(galleries)
+            try:
+                galleries = self.queue.get(block=True, timeout=self.WAIT)
+                self.generate_images(galleries)
+            except queue.Empty:
+                if self.bg_run_count < self.MAX_BG_RUNS:
+                    galleries = [g for g in self.parent.galleries if not g.thumbnail_verified]
+                    if galleries:
+                        self.bg_run_count += 1
+                        self.generate_images(galleries[:self.BG_GALLERY_COUNT], background=True)
 
-    def generate_images(self, galleries):
+
+
+    def generate_images(self, galleries, background=False):
         """
         @:type galleries list[Gallery]
         """
-
         global_queue = queue.Queue()
         for gallery in galleries:
-            if not gallery.expired:
+            if not gallery.expired and not gallery.thumbnail_verified:
                 global_queue.put(gallery)
 
         workers = self.generate_workers(global_queue, self.generate_image)
         [w.thread.start() for w in workers]
         [w.thread.join() for w in workers]
-        self.signals.end.emit()
-
-        thumbs = map(os.path.normcase,
-                     [os.path.join(self.parent.THUMB_DIR, f)
-                      for f in os.listdir(self.parent.THUMB_DIR)])
-        with Database.get_session(self) as session:
-            alive_hashes = list(map(lambda x: x[0], session.execute(
-                select([Database.Gallery.image_hash]).where(
-                    Database.Gallery.dead == False))))
-            for thumb in thumbs:
-                file_hash = os.path.splitext(os.path.basename(thumb))[0]
-                if file_hash not in alive_hashes:
-                    try:
-                        os.remove(thumb)
-                    except OSError:
-                        pass
+        if not background:
+            self.signals.end.emit()
+            thumbs = map(os.path.normcase,
+                         [os.path.join(self.parent.THUMB_DIR, f)
+                          for f in os.listdir(self.parent.THUMB_DIR)])
+            with Database.get_session(self) as session:
+                alive_hashes = list(map(lambda x: x[0], session.execute(
+                    select([Database.Gallery.image_hash]).where(
+                        Database.Gallery.dead == False))))
+                for thumb in thumbs:
+                    file_hash = os.path.splitext(os.path.basename(thumb))[0]
+                    if file_hash not in alive_hashes:
+                        try:
+                            os.remove(thumb)
+                        except OSError:
+                            pass
 
     def generate_image(self, global_queue, *args):
         while not global_queue.empty():
@@ -363,14 +387,17 @@ class SearchThread(BaseThread):
             if gallery.expired:
                 continue
             self.signals.current_gallery.emit(gallery)
-            search_results = Search.search_by_gallery(gallery)
-            if search_results:
-                gallery.id = Gallery.process_ex_url(search_results)
-            if gallery.gid:
-                need_metadata_galleries.append(gallery)
-            if len(need_metadata_galleries) == self.API_ENTRIES:
-                self.get_metadata(need_metadata_galleries)
-                need_metadata_galleries = []
+            try:
+                search_results = Search.search_by_gallery(gallery)
+                if search_results:
+                    gallery.id = Gallery.process_ex_url(search_results)
+                if gallery.gid:
+                    need_metadata_galleries.append(gallery)
+                if len(need_metadata_galleries) == self.API_ENTRIES:
+                    self.get_metadata(need_metadata_galleries)
+                    need_metadata_galleries = []
+            except Exception:
+                self.logger.error("%s failed to search" % gallery, exc_info=True)
         if need_metadata_galleries:
             self.get_metadata(need_metadata_galleries)
         force_galleries = [g for g in galleries if g.force_metadata and g.gid]

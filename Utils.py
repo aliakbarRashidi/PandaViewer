@@ -1,4 +1,5 @@
 import os
+import hashlib
 from Logger import Logger
 
 class Utils(Logger):
@@ -76,3 +77,20 @@ class Utils(Logger):
                     cls.logger.debug("After galleries: %s" % galleries)
             for gallery in galleries[1:]:
                 gallery.mark_for_deletion()
+
+    @classmethod
+    def generate_hash(cls, source):
+        BUFF_SIZE = 65536
+        hash_algo = hashlib.sha1()
+        buff = source.read(BUFF_SIZE)
+        while len(buff) > 0:
+            hash_algo.update(buff)
+            buff = source.read(BUFF_SIZE)
+        return hash_algo.hexdigest()
+
+    @classmethod
+    def debug_trace(cls):
+        from PyQt5.QtCore import pyqtRemoveInputHook, pyqtRestoreInputHook
+        from pdb import set_trace
+        pyqtRemoveInputHook()
+        set_trace()

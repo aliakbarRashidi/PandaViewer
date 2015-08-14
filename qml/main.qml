@@ -98,6 +98,10 @@ ApplicationWindow {
 
     signal openDetailedGallery(var gallery)
 
+    function garbageCollect() {
+        gc()
+    }
+
     function setTags(tags) {
         for (var i = 0; i < tags.length; ++i) {
             matchingTags.append({

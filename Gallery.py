@@ -1,6 +1,5 @@
 #!/usr/bin/env python
 import os
-from os.path import splitext
 import subprocess
 import hashlib
 import json
@@ -10,7 +9,6 @@ import shutil
 import Exceptions
 import zipfile
 from Utils import Utils
-from profilehooks import profile
 from unrar import rarfile
 import tempfile
 import Database
@@ -30,13 +28,13 @@ from threading import Lock
 
 class Gallery(GalleryBoilerplate):
     IMAGE_EXTS = (".png", ".jpg", ".jpeg")
-    HASH_SIZE = 8192
     IMAGE_WIDTH = 200
     MAX_TOOLTIP_LENGTH = 80
     BASE_EX_URL = "http://exhentai.org/g/%s/%s/"
-    FILTERED_FILES = ["hentairulesbanner.jpg"]
+    FILTERED_FILES = ("hentairulesbanner", "credits", "recruit")
     thumbnail_source = None
     image_hash = None
+    mtime_hash = None
     metadata = None
     force_metadata = False
     db_id = None
@@ -155,7 +153,6 @@ class Gallery(GalleryBoilerplate):
         gallery_json["exURL"] = ex_url
         gallery_json["files"] = list(map(Utils.convert_to_qml_path, self.files))
 
-
         return gallery_json
 
     def get_tooltip(self):
@@ -232,13 +229,15 @@ class Gallery(GalleryBoilerplate):
         return self.db_id
 
     def create_in_db(self, **kwargs):
+        self.mtime_hash = self.generate_mtime_hash()
         with Database.get_session(self) as session:
             result = session.execute(insert(Database.Gallery).values(
                 {
                     "type": self.type,
                     "uuid": self.db_uuid,
                     "time_added": int(time()),
-                    "path": self.location
+                    "path": self.location,
+                    "mtime_hash": self.mtime_hash,
 
                 }))
             return int(result.inserted_primary_key[0])
@@ -287,6 +286,7 @@ class Gallery(GalleryBoilerplate):
         self.last_read = gallery_json.get("last_read") or 0
         self.time_added = gallery_json.get("time_added")
         self.metadata = gallery_json.get("metadata", {})
+        self.mtime_hash = gallery_json.get("mtime_hash")
         if isinstance(self, ArchiveGallery):
             self.archive_file = gallery_json.get("path")
             self.path = os.path.dirname(self.archive_file)
@@ -331,6 +331,7 @@ class Gallery(GalleryBoilerplate):
                     "last_read": self.last_read,
                     "path": self.location,
                     "uuid": self.db_uuid,
+                    "mtime_hash": self.mtime_hash,
                     "thumbnail_source": self.thumbnail_source,
                 }
             ))
@@ -351,16 +352,8 @@ class Gallery(GalleryBoilerplate):
     @classmethod
     def generate_hash_from_file(cls, file_path):
         with open(file_path, "rb") as f:
-            return cls.generate_hash(f)
+            return Utils.generate_hash(f)
 
-    @classmethod
-    def generate_hash(cls, source):
-        sha1 = hashlib.sha1()
-        buff = source.read(cls.HASH_SIZE)
-        while len(buff) > 0:
-            sha1.update(buff)
-            buff = source.read(cls.HASH_SIZE)
-        return sha1.hexdigest()
 
     def update_ui_gallery(self):
         self.parent.set_ui_gallery(self)
@@ -394,6 +387,9 @@ class Gallery(GalleryBoilerplate):
         raise NotImplementedError
 
     def generate_image_hash(self, index=None):
+        raise NotImplementedError
+
+    def generate_mtime_hash(self):
         raise NotImplementedError
 
     def delete_file(self):
@@ -434,7 +430,7 @@ class Gallery(GalleryBoilerplate):
         if not self.has_valid_thumbnail():
             self.thumbnail_source = self.thumbnail_source or str(0)
             self.generate_thumbnail()
-            self.save_metadata()
+            self.save_metadata(update_ui=False)
         self.thumbnail_verified = True
 
     def set_thumbnail_source(self, thumbnail_source):
@@ -471,7 +467,6 @@ class Gallery(GalleryBoilerplate):
 
     def open_file(self, index=0):
         QtGui.QDesktopServices.openUrl(QtCore.QUrl.fromLocalFile(self.files[index]))
-
 
     def open_on_ex(self):
         QtGui.QDesktopServices.openUrl(QtCore.QUrl(self.ex_url))
@@ -510,7 +505,8 @@ class Gallery(GalleryBoilerplate):
 
     @classmethod
     def filtered_files(cls, files):
-        return [f for f in files if os.path.basename(f).lower() not in cls.FILTERED_FILES]
+        return [f for f in files if
+                os.path.splitext(os.path.basename(f).lower())[0] not in cls.FILTERED_FILES]
 
 
 class FolderGallery(Gallery):
@@ -575,6 +571,13 @@ class FolderGallery(Gallery):
             if path == self.files[i]:
                 return i
 
+    def generate_mtime_hash(self):
+        hash_algo = hashlib.sha1()
+        for file in (self.files[0], self.files[-1]):
+            stat = os.stat(file)
+            hash_algo.update((str(stat.st_mtime_ns) + str(stat.st_size)).encode("utf8"))
+        return hash_algo.hexdigest()
+
 
 class ArchiveGallery(Gallery):
     temp_dir = None
@@ -585,7 +588,7 @@ class ArchiveGallery(Gallery):
     def __init__(self, **kwargs):
         self.archive_file = Utils.normalize_path(kwargs.get("path"))
         self.path = os.path.dirname(self.archive_file)
-        self.name, self.archive_type = splitext(os.path.basename(self.archive_file))
+        self.name, self.archive_type = os.path.splitext(os.path.basename(self.archive_file))
         self.archive_type = self.archive_type[1:]
         super(ArchiveGallery, self).__init__(**kwargs)
 
@@ -607,7 +610,7 @@ class ArchiveGallery(Gallery):
         if self._raw_files is None:
             self.find_files()
         self.files_lock.release()
-        return self._raw_files
+        return self.filtered_files(self._raw_files)
 
     @raw_files.setter
     def raw_files(self, val):
@@ -668,11 +671,11 @@ class ArchiveGallery(Gallery):
         send2trash(self.archive_file)
 
     def generate_image_hash(self, index=None):
-        return self.generate_hash(self.get_raw_image(index))
+        return Utils.generate_hash(self.get_raw_image(index))
 
     def generate_archive_hash(self):
         with open(self.archive_file, "rb") as archive:
-            return self.generate_hash(archive)
+            return Utils.generate_hash(archive)
 
     def open_folder(self):
         if os.name == "nt":
@@ -685,6 +688,12 @@ class ArchiveGallery(Gallery):
         for i in range(self.file_count):
             if path == os.path.basename(self.raw_files[i]):
                 return i
+
+    def generate_mtime_hash(self):
+        hash_algo = hashlib.sha1()
+        stat = os.stat(self.archive_file)
+        hash_algo.update((str(stat.st_mtime_ns) + str(stat.st_size)).encode("utf8"))
+        return hash_algo.hexdigest()
 
 
 class ZipGallery(ArchiveGallery):
