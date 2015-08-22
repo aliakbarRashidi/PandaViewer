@@ -57,9 +57,9 @@ Page {
         id: galleryModel
     }
 
-    function setGallery(uuid, gallery) {
+    function setGallery(uuid, newgallery) {
         if (gallery.dbUUID === uuid) {
-            galleryModel.set(0, gallery)
+            galleryModel.set(0, newgallery)
         }
     }
 
@@ -241,6 +241,7 @@ Page {
                 cellWidth: Units.dp(200 + 16)
                 cellHeight: Units.dp(300 + 16)
                 model: gallery.files
+                cacheBuffer: cellWidth * gallery.files.length/2
                 delegate: Component {
                         Image {
                             id: pageImage

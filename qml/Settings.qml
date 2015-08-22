@@ -212,7 +212,7 @@ Page {
                 Icon {
                     id: messageIcon
                     anchors.horizontalCenter: parent.horizontalCenter
-                    name: "awesome/warning"
+                    name: "alert/warning"
                     size: Units.dp(100)
                 }
 

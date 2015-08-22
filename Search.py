@@ -7,35 +7,53 @@ import re
 
 
 class Search(Logger):
-    BASE_URL = r"http://exhentai.org/?inline_set=dm_t&f_doujinshi=1&f_manga=1&f_artistcg=1&f_gamecg=1&f_western=1&f_non-h=1&f_imageset=1&f_cosplay=1&f_asianporn=1&f_misc=1&f_sname=on&adv&f_search=%s&advsearch=1&f_srdd=2&f_apply=Apply+Filter&f_shash=%s&page=%s&fs_smiliar=1&fs_covers=%s"
+    BASE_URL = r"http://exhentai.org/?inline_set=dm_t&f_doujinshi=1&f_manga=1&f_artistcg=1&f_gamecg=1&f_western=1&f_non-h=1&f_imageset=1&f_cosplay=1&f_asianporn=1&f_misc=0&f_sname=on&adv&f_search=%s&advsearch=1&f_srdd=2&f_apply=Apply+Filter&f_shash=%s&page=%s&fs_smiliar=1&fs_covers=%s"
 
     @classmethod
     def clean_title(cls, name, remove_enclosed=True):
         banned_chars = ["=", "-", ":", "|", "~", "+", "]", "[", ",", ")", "("]
-        pairs = [("{", "}"), ("(", ")"), ("[", "]")]
         if remove_enclosed:
-            regex = r"\s*\%s[^%s]*\%s"
-            for pair in pairs:
-                name = re.sub(regex % (pair[0], pair[0], pair[1]), "",  name)
+            name = cls.removed_enclosed(name)
         name = name.lstrip().lower()
         for char in banned_chars:
             name = name.replace(char, " ")
         return " ".join(name.split())
 
+
+    @classmethod
+    def removed_enclosed(cls, name):
+        pairs = [("{", "}"), ("(", ")"), ("[", "]")]
+        regex = r"\s*\%s[^%s]*\%s"
+        for pair in pairs:
+            name = re.sub(regex % (pair[0], pair[0], pair[1]), " ",  name)
+        return " ".join(filter(None, name.split()))
+
     @classmethod
     def search_by_gallery(cls, gallery):
         cls = cls()
         cls.name = gallery.title  # For logging
-        sha_hash = gallery.image_hash or gallery.generate_image_hash()
-        hash_search = cls._search(sha_hash=sha_hash)
+        sha_hash = gallery.generate_image_hash(index=0)
+        hash_search = next(cls._search(sha_hash=sha_hash))
         cls.logger.info("Cover hash search results: %s" % hash_search)
         if len(hash_search) == 1:
             return hash_search[0]
-        all_pages_hash = cls._search(sha_hash=sha_hash, cover_only=0)
+        all_pages_hash = next(cls._search(sha_hash=sha_hash, cover_only=0))
         cls.logger.info("All pages hash results: %s" % all_pages_hash)
         if len(all_pages_hash) == 1:
             return all_pages_hash[0]
-        if len(hash_search + all_pages_hash) == 0:
+        combined = hash_search + all_pages_hash
+        if len(combined) == 0:
+            try:
+                sha_hash = gallery.generate_image_hash(index=1)
+                second_hash_search = next(cls._search(sha_hash=sha_hash))
+                if len(second_hash_search) == 1:
+                    return second_hash_search[0]
+                else:
+                    hash_search += second_hash_search
+                    combined += hash_search
+            except IndexError:
+                pass
+        if len(combined) == 0:
             cls.logger.info("No search results for gallery.")
             return
         intersection = [r for r in hash_search if r in all_pages_hash]
@@ -44,7 +62,7 @@ class Search(Logger):
             return intersection[0]
         else:
             cls.logger.info("No intersection results, picking first available hash.")
-            return (hash_search + all_pages_hash)[0]
+            return combined[0]
         # else:
         #     hash_search += all_pages_hash
         # title = cls.clean_title(gallery.name)
@@ -74,11 +92,11 @@ class Search(Logger):
         cls = cls()
         recursive = kwargs.get("recursive", False)
         page_num = kwargs.get("page_num", 0)
-        num_pages = kwargs.get("num_pages", 0)
+        num_pages = kwargs.get("num_pages")
         sha_hash = kwargs.get("sha_hash", "")
         cover_only = kwargs.get("cover_only", 1)
         title = kwargs.get("title", "")
-        url = cls.BASE_URL % (title, sha_hash, page_num, cover_only)
+        url = kwargs.get("url") or cls.BASE_URL % (title, sha_hash, page_num, cover_only)
         response = RequestManager.get(url)
         html_results = BeautifulSoup.BeautifulSoup(response)
         results = html_results.findAll("div", {"class": "it5"})
@@ -92,10 +110,12 @@ class Search(Logger):
                 except IndexError:
                     pass
                 kwargs["num_pages"] = num_pages
+        yield result_urls
         if not recursive or page_num >= num_pages:
-            return result_urls
-        if page_num == 0:
-            kwargs["page_num"] = 1
+            return
         else:
-            kwargs["page_num"] += 1
-        return result_urls + cls._search(**kwargs)
+            if page_num == 0:
+                kwargs["page_num"] = 1
+            else:
+                kwargs["page_num"] += 1
+            yield from cls._search(**kwargs)

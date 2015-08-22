@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 
 from PyQt5 import QtCore
 from Logger import Logger
@@ -7,20 +7,20 @@ import queue
 import weakref
 import copy
 from collections import namedtuple
-from itertools import cycle
 import scandir
 import os
 import sys
 import json
+import math
 import time
 from Gallery import Gallery, FolderGallery, ZipGallery, RarGallery
 import Exceptions
-import Database
+import UserDatabase
+import ExDatabase
 from RequestManager import RequestManager
 from Search import Search
 from sqlalchemy import select, update
 from Utils import Utils
-from profilehooks import profile
 import multiprocessing
 from Config import config
 
@@ -124,9 +124,9 @@ class GalleryThread(BaseThread):
     def load_from_db(self):
         self.logger.info("Starting to load galleries from database.")
         candidates = []
-        with Database.get_session(self) as session:
-            db_gallery_list = map(dict, session.execute(select([Database.Gallery])).fetchall())
-            db_metadata_list = map(dict, session.execute(select([Database.Metadata])).fetchall())
+        with UserDatabase.get_session(self) as session:
+            db_gallery_list = Utils.convert_result(session.execute(select([UserDatabase.Gallery])).fetchall())
+            db_metadata_list = Utils.convert_result(session.execute(select([UserDatabase.Metadata])).fetchall())
         metadata_map = {}
         for metadata in db_metadata_list:
             id = metadata["gallery_id"]
@@ -138,16 +138,16 @@ class GalleryThread(BaseThread):
             gallery["path"] = Utils.normalize_path(gallery["path"])
             path_exists = os.path.exists(gallery["path"])
             if not path_exists and not gallery["dead"]:
-                with Database.get_session(self) as session:
+                with UserDatabase.get_session(self) as session:
                     session.execute(
-                        update(Database.Gallery).where(
-                            Database.Gallery.id == gallery["id"]).values({"dead": True}))
+                        update(UserDatabase.Gallery).where(
+                            UserDatabase.Gallery.id == gallery["id"]).values({"dead": True}))
                 continue
             elif path_exists and gallery["dead"]:
-                with Database.get_session(self) as session:
+                with UserDatabase.get_session(self) as session:
                     session.execute(
-                        update(Database.Gallery).where(
-                            Database.Gallery.id == gallery["id"]).values({"dead": False}))
+                        update(UserDatabase.Gallery).where(
+                            UserDatabase.Gallery.id == gallery["id"]).values({"dead": False}))
                 gallery["dead"] = False
             elif gallery["dead"]:
                 continue
@@ -215,8 +215,8 @@ class GalleryThread(BaseThread):
             dead_galleries += errors.dead_galleries
             invalid_files += errors.invalid_files
         if dead_galleries:
-            with Database.get_session(self) as session:
-                db_galleries = session.query(Database.Gallery).filter(Database.Gallery.id.in_(dead_galleries))
+            with UserDatabase.get_session(self) as session:
+                db_galleries = session.query(UserDatabase.Gallery).filter(UserDatabase.Gallery.id.in_(dead_galleries))
                 for db_gallery in db_galleries:
                     db_gallery.dead = True
                     session.add(db_gallery)
@@ -265,22 +265,17 @@ class ManagementThread(BaseThread):
             for gallery in galleries:
                 while gallery_thread.running:
                     time.sleep(1)
-                mtime_hash = gallery.generate_mtime_hash()
-                if mtime_hash != gallery.mtime_hash:
-                    gallery.mtime_hash = mtime_hash
-                    gallery.db_uuid = gallery.generate_uuid()
-                    gallery.save_metadata(update_ui=False)
+                gallery.validate_db_uuid()
 
 management_thread = ManagementThread()
 
 
 class ImageThread(BaseThread):
     EMIT_FREQ = 5
-    WAIT = 5
-    BG_GALLERY_COUNT = 50
-    MAX_BG_RUNS = 10
+    WAIT = 1
+    BG_GALLERY_COUNT = 25
+    MAX_BG_RUNS = 20
     bg_run_count = 0
-
 
     def setup(self, parent):
         super(ImageThread, self).setup(parent)
@@ -298,11 +293,12 @@ class ImageThread(BaseThread):
                 galleries = self.queue.get(block=True, timeout=self.WAIT)
                 self.generate_images(galleries)
             except queue.Empty:
-                if self.bg_run_count < self.MAX_BG_RUNS:
-                    galleries = [g for g in self.parent.galleries if not g.thumbnail_verified]
-                    if galleries:
-                        self.bg_run_count += 1
-                        self.generate_images(galleries[:self.BG_GALLERY_COUNT], background=True)
+                pass
+            if self.bg_run_count < self.MAX_BG_RUNS:
+                galleries = [g for g in self.parent.galleries if not g.thumbnail_verified]
+                if galleries:
+                    self.bg_run_count += 1
+                    self.generate_images(galleries[:self.BG_GALLERY_COUNT], background=True)
 
 
 
@@ -323,10 +319,10 @@ class ImageThread(BaseThread):
             thumbs = map(os.path.normcase,
                          [os.path.join(self.parent.THUMB_DIR, f)
                           for f in os.listdir(self.parent.THUMB_DIR)])
-            with Database.get_session(self) as session:
+            with UserDatabase.get_session(self) as session:
                 alive_hashes = list(map(lambda x: x[0], session.execute(
-                    select([Database.Gallery.image_hash]).where(
-                        Database.Gallery.dead == False))))
+                    select([UserDatabase.Gallery.image_hash]).where(
+                        UserDatabase.Gallery.dead == False))))
                 for thumb in thumbs:
                     file_hash = os.path.splitext(os.path.basename(thumb))[0]
                     if file_hash not in alive_hashes:
@@ -349,13 +345,113 @@ class ImageThread(BaseThread):
 image_thread = ImageThread()
 
 class SearchThread(BaseThread):
+
+    class Signals(QtCore.QObject):
+        gallery = QtCore.pyqtSignal(object, dict)
+
+    def setup(self, parent):
+        super(SearchThread, self).setup(parent)
+        self.signals = self.Signals()
+        self.signals.gallery.connect(self.parent.update_gallery_metadata)
+
+    def _run(self):
+        while True:
+            galleries = self.queue.get()
+            self.search(galleries)
+
+    def search(self, galleries):
+        search_galleries = [g for g in galleries if
+                            g.gid is None and g.expired is False]
+        if not ExDatabase.exists:
+            ex_search_thread.queue.put(search_galleries)
+            return
+        self.logger.debug("Search galleries: %s" % [g.name for g in search_galleries])
+        not_found_galleries = []
+        with ExDatabase.get_session(self) as session:
+            for gallery in search_galleries:
+                exact_matches =  Utils.convert_result(session.execute(select([ExDatabase.Title]).where(
+                    ExDatabase.Title.title.match('"%s"' % gallery.name))))
+                if len(exact_matches) == 1:
+                    self.update_gallery(gallery, exact_matches[0])
+                elif len(exact_matches) > 1:
+                    if not self.select_by_file_data(gallery, exact_matches):
+                        not_found_galleries.append(gallery)
+                else:
+                    exploded_name = list(filter(None, Search.removed_enclosed(gallery.name).split(" ")))
+                    rough_name = " ".join(['"%s"' % w for w in exploded_name])
+                    rough_matches = Utils.convert_result(session.execute(select([ExDatabase.Title]).where(
+                        ExDatabase.Title.title.match(rough_name))))
+                    if len(rough_matches) == 1:
+                        self.update_gallery(gallery, rough_matches[0])
+                    elif len(rough_matches) > 1 and not self.select_by_file_data(gallery, rough_matches):
+                        not_found_galleries.append(gallery)
+                    elif len(rough_matches) == 0:
+                        self.logger.debug(rough_name)
+                        not_found_galleries.append(gallery)
+                if len(not_found_galleries) >= ex_search_thread.API_ENTRIES:
+                    ex_search_thread.queue.put(not_found_galleries)
+                    not_found_galleries = []
+        if not_found_galleries:
+            ex_search_thread.queue.put(not_found_galleries)
+
+    def select_by_file_data(self, gallery, matches):
+        file_size = gallery.get_file_size()
+        file_size_matches = [m for m in matches if int(m["filesize"]) == file_size]
+        if len(file_size_matches) >= 1:
+            self.update_gallery(gallery, file_size_matches[0])
+            return True
+        size_percent_diff = .1 if isinstance(gallery, FolderGallery) else .15
+        max_file_size = math.floor(file_size + (file_size * size_percent_diff))
+        min_file_size = math.floor(file_size - (file_size * size_percent_diff))
+        rough_file_size_matches = [m for m in matches if min_file_size <= int(m["filesize"]) <= max_file_size]
+        if len(rough_file_size_matches) == 1:
+            self.update_gallery(gallery, rough_file_size_matches[0])
+            return True
+        file_count = len(gallery.get_files(filtered=False))
+        file_count_matches = [m for m in matches if int(m["filecount"]) == file_count]
+        if len(file_count_matches) >= 1:
+            self.update_gallery(gallery, file_count_matches[0])
+            return True
+        max_file_count = math.floor(file_count + (file_count * .1))
+        min_file_count = math.floor(file_count - (file_count * .1))
+        rough_file_count_matches = [m for m in matches if min_file_count <= int(m["filecount"]) <= max_file_count]
+        if len(rough_file_count_matches) == 1:
+            self.update_gallery(gallery, rough_file_count_matches[0])
+            return True
+        rough_intersection = [m for m in rough_file_size_matches if m in rough_file_count_matches]
+        if len(rough_intersection) >= 1:
+            self.update_gallery(gallery, rough_intersection[0])
+            return True
+        return False
+
+    def update_gallery(self, gallery, match):
+        with ExDatabase.get_session(self) as session:
+            result = dict(session.execute(select([ExDatabase.Gallery]).where(
+                ExDatabase.Gallery.id == match["id"])).fetchone())
+        result.pop("id")
+        result["tags"] = json.loads(result["tags"])
+        self.signals.gallery.emit(gallery, {"gmetadata": result})
+
+
+
+
+search_thread = SearchThread()
+
+
+
+
+
+
+
+
+class ExSearchThread(BaseThread):
     API_URL = "http://exhentai.org/api.php"
     BASE_REQUEST = {"method": "gdata", "gidlist": [], "namespace": 1}
     API_MAX_ENTRIES = 25
     API_ENTRIES = 10
 
     def setup(self, parent):
-        super(SearchThread, self).setup(parent)
+        super(ExSearchThread, self).setup(parent)
         self.signals = self.Signals()
         self.signals.end.connect(self.parent.get_metadata_done)
         self.signals.gallery.connect(self.parent.update_gallery_metadata)
@@ -396,6 +492,8 @@ class SearchThread(BaseThread):
                 if len(need_metadata_galleries) == self.API_ENTRIES:
                     self.get_metadata(need_metadata_galleries)
                     need_metadata_galleries = []
+            except Exceptions.CustomBaseException:
+                raise
             except Exception:
                 self.logger.error("%s failed to search" % gallery, exc_info=True)
         if need_metadata_galleries:
@@ -421,7 +519,8 @@ class SearchThread(BaseThread):
                 if id == gallery.id:
                     self.signals.gallery.emit(gallery, {"gmetadata": metadata})
                     break
-search_thread = SearchThread()
+ex_search_thread = ExSearchThread()
+
 
 class DuplicateFinderThread(BaseThread):
 
@@ -451,4 +550,4 @@ class DuplicateFinderThread(BaseThread):
 
 duplicate_thread = DuplicateFinderThread()
 
-DAEMON_THREADS = [gallery_thread, image_thread, search_thread, duplicate_thread, management_thread]
+DAEMON_THREADS = [gallery_thread, image_thread, ex_search_thread, duplicate_thread, management_thread, search_thread]

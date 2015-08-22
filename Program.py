@@ -1,24 +1,29 @@
-#!/usr/bin/env python2
+#!/usr/bin/env python3
 
+import sys
+import logging
+from Logger import Logger
+from Utils import Utils
+from time import strftime
 from PyQt5 import QtGui
 from PyQt5 import QtWidgets
 from PyQt5 import QtQml
 from PyQt5 import QtQuick
 from PyQt5 import QtNetwork
 from PyQt5 import QtCore
-from time import strftime
-from Logger import Logger
 from operator import attrgetter
-import sys
 import os
 import re
 import gc
-import json
-import logging
+
+# Need to run before importing project files
+if os.name == "nt":
+    os.environ["UNRAR_LIB_PATH"] = Utils.convert_from_relative_path("unrar.dll")
+if not os.path.exists(Utils.convert_from_relative_lsv_path("")):
+    os.mkdir(Utils.convert_from_relative_lsv_path(""))
 import Threads
 import Exceptions
-import Database
-from Utils import Utils
+import UserDatabase
 from Gallery import Gallery
 from Config import config
 
@@ -27,7 +32,7 @@ class Program(QtWidgets.QApplication, Logger):
     PAGE_SIZE = 100
     BUG_PAGE = "https://github.com/seanegoodwin/pandaviewer/issues"
     THUMB_DIR = Utils.convert_from_relative_lsv_path("thumbs")
-    QML_PATH = os.path.join(os.path.abspath("."), "qml/")
+    QML_PATH = Utils.convert_from_relative_path("qml/")
     MAX_TAG_RETURN_COUNT = 5
 
     class SortMap(object):
@@ -58,13 +63,15 @@ class Program(QtWidgets.QApplication, Logger):
     def setup(self):
         if not os.path.exists(self.THUMB_DIR):
             os.makedirs(self.THUMB_DIR)
-        Database.setup()
+        UserDatabase.setup()
 
         self.setAttribute(QtCore.Qt.AA_UseOpenGLES, True)
-        self.addLibraryPath(self.QML_PATH)
+
+        #self.addLibraryPath(self.QML_PATH)
         self.qml_engine = QtQml.QQmlApplicationEngine()
         self.qml_engine.addImportPath(self.QML_PATH)
-        self.qml_engine.addPluginPath(self.QML_PATH)
+        #self.qml_engine.addPluginPath(self.QML_PATH)
+
         self.qml_engine.load(os.path.join(self.QML_PATH, "main.qml"))
         self.app_window = self.qml_engine.rootObjects()[0]
         self.app_window.updateGalleryRating.connect(self.update_gallery_rating)
@@ -116,8 +123,9 @@ class Program(QtWidgets.QApplication, Logger):
     def remove_gallery_by_uuid(self, uuid):
         gallery = self.get_gallery_by_ui_uuid(uuid)
         gallery.mark_for_deletion()
-        self.current_page.remove(gallery)
+        # self.current_page.remove(gallery)
         self.setup_tags()
+        self.remove_gallery_and_recalculate_pages(gallery)
 
     def get_detailed_gallery(self, uuid):
         self.app_window.openDetailedGallery.emit(self.get_gallery_by_ui_uuid(uuid).get_detailed_json())
@@ -301,10 +309,10 @@ class Program(QtWidgets.QApplication, Logger):
         self.setup_tags()
         self.sort()
 
-    def send_page(self):
+    def send_page(self, reset_scroll=True):
         index_list = (i for i in range(0, self.PAGE_SIZE))
         for gallery in self.current_page:
-            self.app_window.setUIGallery.emit(next(index_list), gallery.get_json())
+            self.app_window.setUIGallery.emit(next(index_list), gallery.get_json(), reset_scroll)
 
         [self.app_window.removeUIGallery.emit(i, 1) for i in list(index_list)[::-1]]
         # index_list = list(index_list)
@@ -318,12 +326,12 @@ class Program(QtWidgets.QApplication, Logger):
         gc.collect()
         self.app_window.garbageCollect()
 
-    def show_page(self):
+    def show_page(self, reset_scroll=True):
         need_images = [g for g in self.current_page if not g.thumbnail_verified]
         if need_images:
             self.generate_images(need_images)
         else:
-            self.send_page()
+            self.send_page(reset_scroll)
 
     def hide_page(self):
         self.app_window.clearGalleries.emit()
@@ -426,13 +434,14 @@ class Program(QtWidgets.QApplication, Logger):
         self.galleries.remove(gallery)
         self.current_page.remove(gallery)
         working_page = self.page_number
-        while working_page < self.page_count:
+        while working_page < self.page_count - 1:
             self.pages[working_page].append(self.pages[working_page + 1].pop(0))
             working_page += 1
         self.pages = [p for p in self.pages if p]
-        if self.page_count >= self.page_number:
+        if self.page_number >= self.page_count:
             self.switch_page(self.page_count)
-
+        else:
+            self.show_page(reset_scroll=False)
 
     def thread_exception_handler(self, thread, exception):
         self.exception_hook(*exception)
@@ -447,8 +456,6 @@ class Program(QtWidgets.QApplication, Logger):
             self.logger.error("Got unhandled exception", exc_info=(extype, exvalue, extraceback))
         self.app_window.setException(message, fatal)
 
-
-
 if __name__ == "__main__":
     # import locale
     # locale.setlocale(locale.LC_ALL, "en_US.UTF-8")
@@ -460,6 +467,8 @@ if __name__ == "__main__":
     if os.name == "nt":
         import ctypes
         ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("pv.ui")
+
+
     app = Program(sys.argv)
     sys.excepthook = app.exception_hook
     app.setup()

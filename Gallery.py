@@ -11,7 +11,8 @@ import zipfile
 from Utils import Utils
 from unrar import rarfile
 import tempfile
-import Database
+import humanize
+import UserDatabase
 from contextlib import contextmanager
 from Search import Search
 from Boilerplate import GalleryBoilerplate
@@ -31,7 +32,7 @@ class Gallery(GalleryBoilerplate):
     IMAGE_WIDTH = 200
     MAX_TOOLTIP_LENGTH = 80
     BASE_EX_URL = "http://exhentai.org/g/%s/%s/"
-    FILTERED_FILES = ("hentairulesbanner", "credits", "recruit")
+    FILTERED_FILES = ("hentairulesbanner", "credits", "recruit", "zcredits", "kameden")
     thumbnail_source = None
     image_hash = None
     mtime_hash = None
@@ -43,12 +44,12 @@ class Gallery(GalleryBoilerplate):
     name = ""
     read_count = 0
     last_read = ""
-    files = None
     time_added = None
     expired = False
     path = None
     type = None
     thumbnail_verified = False
+    db_uuid_verified = False
 
     class TypeMap(object):
         FolderGallery = 0
@@ -66,8 +67,10 @@ class Gallery(GalleryBoilerplate):
         if kwargs.get("loaded"):
             self.load_from_json(kwargs["json"])
         else:
-            assert self.file_count > 0
-            self.db_id = self.find_in_db()
+            self.validate_file_count()
+            self.find_in_db()
+            if self.db_id is None:
+                self.create_in_db()
             self.load_metadata()
 
     def __del__(self):
@@ -75,12 +78,8 @@ class Gallery(GalleryBoilerplate):
             self.delete()
 
     @property
-    def files(self):
-        raise NotImplementedError
-
-    @property
     def image_folder(self):
-        return Utils.convert_to_qml_path(os.path.dirname(self.files[0]))
+        return Utils.convert_to_qml_path(os.path.dirname(self.get_files()[0]))
 
     @property
     def thumbnail_path(self):
@@ -151,9 +150,15 @@ class Gallery(GalleryBoilerplate):
         gallery_json["exTitle"] = self.extitle
         gallery_json["exAuto"] = self.ex_auto_collection
         gallery_json["exURL"] = ex_url
-        gallery_json["files"] = list(map(Utils.convert_to_qml_path, self.files))
+        gallery_json["files"] = list(map(Utils.convert_to_qml_path, self.get_files()))
 
         return gallery_json
+
+    def get_files(self, filtered=False):
+        raise NotImplementedError
+
+    def validate_file_count(self):
+        raise NotImplementedError
 
     def get_tooltip(self):
         plural = "s" if self.read_count != 1 else ""
@@ -161,7 +166,7 @@ class Gallery(GalleryBoilerplate):
         lines = 1
         if self.last_read:
             lines += 1
-            tooltip += "\nLast read on: %s" % self.local_last_read_time
+            tooltip += "\nLast read %s" % self.local_last_read_time
         if self.tags:
             tags = ["\nTags: "]
             lines += 1
@@ -208,30 +213,27 @@ class Gallery(GalleryBoilerplate):
     def find_in_db(self):
         # TODO: Deprecate uuid for folder galleries
         self.db_uuid = self.generate_uuid()
-        with Database.get_session(self, acquire=True) as session:
-            db_gallery = list(map(dict, session.execute(
-                select([Database.Gallery]).where(
-                    Database.Gallery.uuid == self.db_uuid).where(
-                    Database.Gallery.type == self.type).where(
-                    Database.Gallery.dead == True
-                ))))
+        with UserDatabase.get_session(self, acquire=True) as session:
+            db_gallery = Utils.convert_result(session.execute(
+                select([UserDatabase.Gallery]).where(
+                    UserDatabase.Gallery.uuid == self.db_uuid).where(
+                    UserDatabase.Gallery.type == self.type).where(
+                    UserDatabase.Gallery.dead == True
+                )))
             if db_gallery:
                 self.db_id = db_gallery[0]["id"]
-                session.execute(update(Database.Gallery).where(
-                    Database.Gallery.id == self.db_id).values(
+                session.execute(update(UserDatabase.Gallery).where(
+                    UserDatabase.Gallery.id == self.db_id).values(
                     {
                         "path": self.location,
                         "dead": False,
                     }
                 ))
-        if not self.db_id:
-            self.db_id = self.create_in_db()
-        return self.db_id
 
     def create_in_db(self, **kwargs):
         self.mtime_hash = self.generate_mtime_hash()
-        with Database.get_session(self) as session:
-            result = session.execute(insert(Database.Gallery).values(
+        with UserDatabase.get_session(self) as session:
+            result = session.execute(insert(UserDatabase.Gallery).values(
                 {
                     "type": self.type,
                     "uuid": self.db_uuid,
@@ -240,7 +242,7 @@ class Gallery(GalleryBoilerplate):
                     "mtime_hash": self.mtime_hash,
 
                 }))
-            return int(result.inserted_primary_key[0])
+            self.db_id = int(result.inserted_primary_key[0])
 
     def mark_for_deletion(self):
         self.logger.info("Marked for deletion")
@@ -255,25 +257,24 @@ class Gallery(GalleryBoilerplate):
         self.delete_from_db()
 
     def delete_from_db(self):
-        with Database.get_session(self) as session:
-            session.execute(delete(Database.Metadata).where(Database.Metadata.gallery_id == self.db_id))
-            session.execute(delete(Database.Gallery).where(Database.Gallery.id == self.db_id))
+        with UserDatabase.get_session(self) as session:
+            session.execute(delete(UserDatabase.Metadata).where(UserDatabase.Metadata.gallery_id == self.db_id))
+            session.execute(delete(UserDatabase.Gallery).where(UserDatabase.Gallery.id == self.db_id))
 
     def delete_dbmetadata(self, metadata):
         self.metadata.pop(metadata)
-        with Database.get_session(self) as session:
-            session.execute(delete(Database.Metadata).where(
-                Database.Metadata.gallery_id == self.db_id).where(
-                Database.Metadata.name == metadata))
+        with UserDatabase.get_session(self) as session:
+            session.execute(delete(UserDatabase.Metadata).where(
+                UserDatabase.Metadata.gallery_id == self.db_id).where(
+                UserDatabase.Metadata.name == metadata))
 
     def load_metadata(self):
-        with Database.get_session(self) as session:
-            db_gallery = list(map(dict,
-                                  session.execute(select([Database.Gallery]).where(
-                                      Database.Gallery.id == self.db_id))))[0]
-
-            db_metadata = list(map(dict, session.execute(select([Database.Metadata]).where(
-                Database.Metadata.gallery_id == self.db_id))))
+        with UserDatabase.get_session(self) as session:
+            db_gallery = Utils.convert_result(
+                session.execute(select([UserDatabase.Gallery]).where(
+                    UserDatabase.Gallery.id == self.db_id)))[0]
+            db_metadata = Utils.convert_result(session.execute(select([UserDatabase.Metadata]).where(
+                UserDatabase.Metadata.gallery_id == self.db_id)))
         db_gallery["metadata"] = {m["name"]: json.loads(m["json"]) for m in db_metadata}
         self.load_from_json(db_gallery)
 
@@ -301,14 +302,14 @@ class Gallery(GalleryBoilerplate):
     def save_metadata(self, update_ui=True):
         self.logger.info("Saving gallery metadata")
         self.metadata = self.clean_metadata(self.metadata)
-        with Database.get_session(self) as session:
-            db_metadata_list = list(map(dict, session.execute(select([Database.Metadata]).where(
-                Database.Metadata.gallery_id == self.db_id))))
+        with UserDatabase.get_session(self) as session:
+            db_metadata_list = Utils.convert_result(session.execute(select([UserDatabase.Metadata]).where(
+                UserDatabase.Metadata.gallery_id == self.db_id)))
             for name in self.metadata:
                 metadata_json = str(json.dumps(self.metadata[name], ensure_ascii=False))
                 db_metadata = next((m for m in db_metadata_list if m["name"] == name), None)
                 if not db_metadata:
-                    session.execute(insert(Database.Metadata).values(
+                    session.execute(insert(UserDatabase.Metadata).values(
                         {
                             "name": name,
                             "gallery_id": self.db_id,
@@ -316,15 +317,15 @@ class Gallery(GalleryBoilerplate):
                         }
                     ))
                 else:
-                    session.execute(update(Database.Metadata).where(
-                        Database.Metadata.gallery_id == self.db_id).where(
-                        Database.Metadata.name == name).values(
+                    session.execute(update(UserDatabase.Metadata).where(
+                        UserDatabase.Metadata.gallery_id == self.db_id).where(
+                        UserDatabase.Metadata.name == name).values(
                         {
                             "json": metadata_json,
 
                         }
                     ))
-            session.execute(update(Database.Gallery).where(Database.Gallery.id == self.db_id).values(
+            session.execute(update(UserDatabase.Gallery).where(UserDatabase.Gallery.id == self.db_id).values(
                 {
                     "image_hash": self.image_hash,
                     "read_count": self.read_count,
@@ -342,28 +343,25 @@ class Gallery(GalleryBoilerplate):
     def get_file_size(self):
         raise NotImplementedError
 
-    @property
-    def file_count(self):
-        raise NotImplementedError
-
     def find_file_index(self, path):
         raise NotImplementedError
 
     @classmethod
     def generate_hash_from_file(cls, file_path):
         with open(file_path, "rb") as f:
-            return Utils.generate_hash(f)
+            return Utils.generate_hash_from_source(f)
 
 
     def update_ui_gallery(self):
         self.parent.set_ui_gallery(self)
 
-    def clean_metadata(self, metadata):
+    @classmethod
+    def clean_metadata(cls, metadata):
         if isinstance(metadata, dict):
-            metadata = {key: self.clean_metadata(metadata[key])
+            metadata = {key: cls.clean_metadata(metadata[key])
                         for key in metadata}
         elif isinstance(metadata, list):
-            metadata = [self.clean_metadata(val) for val in metadata]
+            metadata = [cls.clean_metadata(val) for val in metadata]
         elif isinstance(metadata, str):
             metadata = re.sub("&#039;", "'", metadata)
             metadata = re.sub("&quot;", "\"", metadata)
@@ -466,7 +464,7 @@ class Gallery(GalleryBoilerplate):
         self.open_file(index)
 
     def open_file(self, index=0):
-        QtGui.QDesktopServices.openUrl(QtCore.QUrl.fromLocalFile(self.files[index]))
+        QtGui.QDesktopServices.openUrl(QtCore.QUrl.fromLocalFile(self.get_files()[index]))
 
     def open_on_ex(self):
         QtGui.QDesktopServices.openUrl(QtCore.QUrl(self.ex_url))
@@ -480,12 +478,12 @@ class Gallery(GalleryBoilerplate):
     @property
     def local_last_read_time(self):
         if self.last_read:
-            return datetime.fromtimestamp(self.last_read).strftime("%Y-%m-%d")
+            return humanize.naturaltime(datetime.fromtimestamp(self.last_read))
 
     def generate_uuid(self):
         return str(hashlib.sha1((self.generate_image_hash(index=0) +
                                  self.generate_image_hash(index=-1) +
-                                 str(self.file_count)).encode("utf8")).hexdigest())
+                                 str(len(self.get_files()))).encode("utf8")).hexdigest())
 
     def has_metadata_by_key(self, key):
         metadata = self.metadata.get(key, {})
@@ -508,6 +506,14 @@ class Gallery(GalleryBoilerplate):
         return [f for f in files if
                 os.path.splitext(os.path.basename(f).lower())[0] not in cls.FILTERED_FILES]
 
+    def validate_db_uuid(self):
+        mtime_hash = self.generate_mtime_hash()
+        if mtime_hash != self.mtime_hash:
+            self.mtime_hash = mtime_hash
+            self.db_uuid = self.generate_uuid()
+            self.save_metadata(update_ui=False)
+        self.db_uuid_verified = True
+
 
 class FolderGallery(Gallery):
     _files = None
@@ -515,38 +521,35 @@ class FolderGallery(Gallery):
 
     def __init__(self, **kwargs):
         self.path = Utils.normalize_path(kwargs.get("path"))
+        self._files = kwargs.get("files")
+        self.name = self.path.split(os.sep)[-1]
         if kwargs.get("loaded"):
             assert any(os.path.isfile(os.path.join(self.path, f)) for f in os.listdir(self.path))
-        self.name = self.path.split(os.sep)[-1]
-        self.files = kwargs.get("files")
         super(FolderGallery, self).__init__(**kwargs)
 
-    @property
-    def files(self):
+    def get_files(self, filtered=True):
         self.files_lock.acquire()
         if self._files is None:
             self.find_files()
         self.files_lock.release()
-        return self.filtered_files(self._files)
+        if filtered:
+            return self.filtered_files(self._files)
+        else:
+            return self._files
 
-    @files.setter
-    def files(self, val):
-        self._files = val
-
-    @property
-    def file_count(self):
-        return len(self.files)
+    def validate_file_count(self):
+        assert len(self.get_files()) > 0
 
     @property
     def sort_path(self):
         return self.path
 
     def get_image(self, index=None):
-        return self.get_image_from_file(self.files[index])
+        return self.get_image_from_file(self.get_files()[index])
 
     def generate_image_hash(self, index=None):
         index = index if index is not None else 0
-        return self.generate_hash_from_file(self.files[index])
+        return self.generate_hash_from_file(self.get_files()[index])
 
     def find_files(self):
         found_files = []
@@ -556,27 +559,30 @@ class FolderGallery(Gallery):
                     found_files.append(os.path.join(base_folder, f))
             break
         found_files = list(map(os.path.normpath, found_files))
-        self.files = sorted(found_files, key=lambda f: f.lower())
+        # self.files = sorted(found_files, key=lambda f: f.lower())
+        self._files = Utils.human_sort_paths(found_files)
 
     def delete_file(self):
         send2trash(self.path)
 
     def get_file_size(self):
-        size = sum(os.path.getsize(f) for f in self.files)
-        return Utils.get_readable_size(size)
+        return sum(os.path.getsize(f) for f in self.get_files(filtered=False))
 
     def find_file_index(self, path):
         path = Utils.normalize_path(path)
-        for i in range(self.file_count):
-            if path == self.files[i]:
+        files = self.get_files()
+        for i in range(len(files)):
+            if path == files[i]:
                 return i
 
     def generate_mtime_hash(self):
         hash_algo = hashlib.sha1()
-        for file in (self.files[0], self.files[-1]):
+        files = self.get_files()
+        for file in (files[0], files[-1]):
             stat = os.stat(file)
             hash_algo.update((str(stat.st_mtime_ns) + str(stat.st_size)).encode("utf8"))
         return hash_algo.hexdigest()
+
 
 
 class ArchiveGallery(Gallery):
@@ -604,17 +610,15 @@ class ArchiveGallery(Gallery):
     def location(self):
         return self.archive_file
 
-    @property
-    def raw_files(self):
+    def get_raw_files(self, filtered=True):
         self.files_lock.acquire()
         if self._raw_files is None:
             self.find_files()
         self.files_lock.release()
-        return self.filtered_files(self._raw_files)
-
-    @raw_files.setter
-    def raw_files(self, val):
-        self._raw_files = val
+        if filtered:
+            return self.filtered_files(self._raw_files)
+        else:
+            return self._raw_files
 
     @property
     def sort_path(self):
@@ -642,40 +646,33 @@ class ArchiveGallery(Gallery):
                 archive.extractall(self.temp_dir)
 
     def get_file_size(self):
-        return Utils.get_readable_size(os.path.getsize(self.archive_file))
+        return os.path.getsize(self.archive_file)
 
     def get_raw_image(self, index=None):
         index = index if index is not None else 0
         with self.archive as archive:
-            return archive.open(self.raw_files[index])
+            return archive.open(self.get_raw_files(index))
 
-    @property
-    def file_count(self):
-        return len(self.raw_files)
-
-    @property
-    def files(self):
+    def get_files(self, filtered=True):
         self.extract()
-        files = [os.path.join(self.temp_dir, f) for f in self.raw_files]
-        #print(self.raw_files)
+        files = [os.path.join(self.temp_dir, f) for f in self.get_raw_files(filtered=filtered)]
         return self.filtered_files(list(map(Utils.normalize_path, files)))
 
     def find_files(self, **kwargs):
-        raw_files = []
         with self.archive as archive:
             raw_files = [f for f in archive.namelist()
                          if Utils.file_has_allowed_extension(f, self.IMAGE_EXTS)]
-        self.raw_files = sorted(raw_files, key=lambda f: f.lower())
+        self._raw_files = Utils.human_sort_paths(raw_files)
 
     def delete_file(self):
         send2trash(self.archive_file)
 
     def generate_image_hash(self, index=None):
-        return Utils.generate_hash(self.get_raw_image(index))
+        return Utils.generate_hash_from_source(self.get_raw_image(index))
 
     def generate_archive_hash(self):
         with open(self.archive_file, "rb") as archive:
-            return Utils.generate_hash(archive)
+            return Utils.generate_hash_from_source(archive)
 
     def open_folder(self):
         if os.name == "nt":
@@ -685,8 +682,9 @@ class ArchiveGallery(Gallery):
 
     def find_file_index(self, path):
         path = os.path.basename(Utils.normalize_path(path))
-        for i in range(self.file_count):
-            if path == os.path.basename(self.raw_files[i]):
+        raw_files = self.get_raw_files()
+        for i in range(raw_files):
+            if path == os.path.basename(raw_files[i]):
                 return i
 
     def generate_mtime_hash(self):
@@ -694,6 +692,9 @@ class ArchiveGallery(Gallery):
         stat = os.stat(self.archive_file)
         hash_algo.update((str(stat.st_mtime_ns) + str(stat.st_size)).encode("utf8"))
         return hash_algo.hexdigest()
+
+    def validate_file_count(self):
+        assert len(self.get_raw_files()) > 0
 
 
 class ZipGallery(ArchiveGallery):

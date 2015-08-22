@@ -5,6 +5,14 @@ from Logger import Logger
 class Utils(Logger):
 
     @classmethod
+    def convert_result(cls, result):
+        return list(map(dict, result))
+
+    @classmethod
+    def convert_from_relative_path(cls, path):
+        return cls.normalize_path(os.path.join(os.path.dirname(__file__), path))
+
+    @classmethod
     def convert_from_relative_lsv_path(cls, path):
         return cls.normalize_path(os.path.join("~/.lsv", path))
 
@@ -79,7 +87,7 @@ class Utils(Logger):
                 gallery.mark_for_deletion()
 
     @classmethod
-    def generate_hash(cls, source):
+    def generate_hash_from_source(cls, source):
         BUFF_SIZE = 65536
         hash_algo = hashlib.sha1()
         buff = source.read(BUFF_SIZE)
@@ -94,3 +102,15 @@ class Utils(Logger):
         from pdb import set_trace
         pyqtRemoveInputHook()
         set_trace()
+
+    @classmethod
+    def human_sort_paths(cls, paths):
+        key = None
+        if os.name == "nt":
+            import ctypes
+            import functools
+            key = functools.cmp_to_key(ctypes.windll.shlwapi.StrCmpLogicalW)
+        return sorted(paths, key=key)
+
+
+

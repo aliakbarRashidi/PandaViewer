@@ -13,10 +13,9 @@ Row {
         id: starRepeater
         model: [1, 2, 3, 4, 5]
         property real currentStarValue: currentRating
-        property string fullStar: "awesome/star"
-        property string halfStar: "awesome/star_half_full"
-        property string noStar: "awesome/star_o"
-
+        property string fullStar: "toggle/star"
+        property string halfStar: "toggle/star_half"
+        property string noStar: "toggle/star_outline"
         delegate: Icon {
             id: starIcon
             property int starNum: modelData

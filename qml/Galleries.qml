@@ -61,14 +61,15 @@ Item {
                 return i
             }
         }
+        return -1
     }
 
     function setGallery(uuid, gallery) {
         galleryModel.set(getIndexFromUUID(uuid), gallery)
     }
 
-    function setUIGallery(index, gallery) {
-        grid.positionViewAtBeginning()
+    function setUIGallery(index, gallery, resetScroll) {
+        if (resetScroll) grid.positionViewAtBeginning()
         galleryModel.set(index, gallery)
         //        delegateModel.items.addGroups(index, 1, "visible")
     }
@@ -131,7 +132,7 @@ Item {
 
             PropertyChanges {
                 target: messageIcon
-                name: "awesome/search"
+                name: "action/search"
             }
         },
 
@@ -158,7 +159,7 @@ Item {
 
             PropertyChanges {
                 target: messageIcon
-                name: "awesome/warning"
+                name: "alert/warning"
             }
         },
 
@@ -188,7 +189,7 @@ Item {
         Icon {
             id: messageIcon
             anchors.horizontalCenter: parent.horizontalCenter
-            name: "awesome/warning"
+            name: "alert/warning"
             size: Units.dp(100)
         }
 

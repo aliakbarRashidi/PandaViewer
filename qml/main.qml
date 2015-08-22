@@ -8,7 +8,7 @@ import Material.ListItems 0.1 as ListItem
 
 ApplicationWindow {
     id: mainWindow
-    title: "PandaViewer"
+    title: "PandaViewer - Page " + currentPage + " of " + numPages
 
     theme {
         primaryColor: Palette.colors["blue"]["500"]
@@ -41,7 +41,6 @@ ApplicationWindow {
         if (!scanningModeOn) {
             snackbar.opened = false
         }
-
     }
 
     function setSearchMode(mode) {
@@ -89,8 +88,7 @@ ApplicationWindow {
 
     signal pageChange(int page)
 
-    signal setUIGallery(int index, var gallery)
-    signal setUIGalleries(var galleries)
+    signal setUIGallery(int index, var gallery, bool resetScroll)
     signal removeUIGallery(int index, int count)
     signal getDetailedGallery(string uuid)
     signal setUISort(int sortType, int reversed)
@@ -134,7 +132,9 @@ ApplicationWindow {
         exceptionDialog.show()
     }
 
-    property var settings: {""}
+    property var settings: {
+        ""
+    }
 
     property var homeSections: ["Galleries"]
 
@@ -307,23 +307,27 @@ ApplicationWindow {
         actions: [
             Action {
                 id: backPageAction
-                iconName: "awesome/arrow_left"
+                iconName: "navigation/arrow_back"
                 name: "Previous"
                 enabled: currentPage != 1
                 onTriggered: pageChange(currentPage - 1)
             },
 
             Action {
-                id: gotoPageAction
-                iconName: "awesome/ellipsis_h"
+                iconName: "navigation/more_horiz"
                 name: "Goto page"
-                onTriggered: pageDialog.show()
+                //                onTriggered: pageDialog.show()
                 enabled: numPages > 1
+                onTriggered: {
+                    pageDialog.show()
+//                    gotoPageDropdownLoader.sourceComponent = gotoPageDropdownComponent
+//                    gotoPageDropdownLoader.item.open(page.actionBar, -1 * ((8 * Units.dp(24))), page.actionBar.height)
+                }
             },
 
             Action {
                 id: forwardsPageAction
-                iconName: "awesome/arrow_right"
+                iconName: "navigation/arrow_forward"
                 name: "Next"
                 enabled: currentPage != numPages
                 onTriggered: pageChange(currentPage + 1)
@@ -333,6 +337,7 @@ ApplicationWindow {
                 id: searchAction
                 iconName: "action/search"
                 name: "Search"
+                shortcut: "Ctrl+F"
                 onTriggered: searchContainer.toggle()
             },
 
@@ -351,7 +356,7 @@ ApplicationWindow {
             Action {
                 id: metadataAction
                 name: "Download metadata"
-                iconName: "awesome/download"
+                iconName: "file/file_download"
                 enabled: !searchModeOn
                 onTriggered: metadataDialog.show()
             },
@@ -474,11 +479,42 @@ ApplicationWindow {
         }
     }
 
+    Loader {
+        id: gotoPageDropdownLoader
+        asynchronous: false
+    }
+
+    Component {
+        id: gotoPageDropdownComponent
+        Dropdown {
+            id: gotoPageDropdown
+            property alias view: listView
+            width: Units.dp(100)
+            height: listView.childrenRect.height < Units.dp(mainWindow.height /2) ?
+                        listView.childrenRect.height : Units.dp(mainWindow.height /2)
+            data: ListView {
+                id: listView
+                anchors.fill: parent
+                model: numPages
+                delegate: ListItem.Standard {
+                    text: modelData + 1
+                    onClicked: {
+                        pageChange(text)
+                        gotoPageDropdown.close()
+                    }
+                }
+            }
+        }
+    }
+
     Dialog {
         id: pageDialog
         title: "Goto page"
         positiveButtonText: "Go"
         positiveButtonEnabled: pageText.acceptableInput
+        Component.onCompleted: {
+            pageText.forceActiveFocus()
+        }
 
         TextField {
             id: pageText
@@ -574,7 +610,7 @@ ApplicationWindow {
             text: "Redownload metadata for all galleries"
         }
 
-        onAccepted: metadataSearch(forceAll.checked ? -1: 0)
+        onAccepted: metadataSearch(forceAll.checked ? -1 : 0)
     }
 
     Dialog {
@@ -607,14 +643,12 @@ ApplicationWindow {
                         typeRepeater.itemAt(i).checked = true
                         break
                     }
-
                 }
                 for (var i = 0; i < modeRepeater.model.length; ++i) {
                     if (i === sortMode) {
                         modeRepeater.itemAt(i).checked = true
                         break
                     }
-
                 }
             }
 

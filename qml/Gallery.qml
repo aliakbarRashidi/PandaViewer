@@ -70,7 +70,7 @@ Card {
         source: image
         cache: false
         sourceSize.width: 200
-        asynchronous: true
+        asynchronous: false
         anchors {
             top: parent.top
             left: parent.left
@@ -198,7 +198,8 @@ Card {
                     onClicked: {
                         menuDropdown.close()
                         if (mainWindow.settings["confirm_delete"]) {
-                            confirmDeleteDialog.show()
+                            confirmDeleteDialogLoader.sourceComponent = confirmDeleteDialogComponent
+                            confirmDeleteDialogLoader.item.show()
                         } else {
                             removeGallery()
                         }
@@ -231,6 +232,11 @@ Card {
                 }
             }
         }
+    }
+
+    Loader {
+        id: confirmDeleteDialogLoader
+        asynchronous: false
     }
 
     Component {
