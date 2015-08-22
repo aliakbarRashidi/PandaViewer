@@ -651,7 +651,7 @@ class ArchiveGallery(Gallery):
     def get_raw_image(self, index=None):
         index = index if index is not None else 0
         with self.archive as archive:
-            return archive.open(self.get_raw_files(index))
+            return archive.open(self.get_raw_files()[index])
 
     def get_files(self, filtered=True):
         self.extract()
