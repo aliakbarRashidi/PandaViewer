@@ -362,6 +362,7 @@ class SearchThread(BaseThread):
     def search(self, galleries):
         search_galleries = [g for g in galleries if
                             g.gid is None and g.expired is False]
+        ex_search_thread.queue.put([g for g in galleries if g.force_metadata])
         if not ExDatabase.exists:
             ex_search_thread.queue.put(search_galleries)
             return
@@ -374,7 +375,7 @@ class SearchThread(BaseThread):
                 if len(exact_matches) == 1:
                     self.update_gallery(gallery, exact_matches[0])
                 elif len(exact_matches) > 1:
-                    if not self.select_by_file_data(gallery, exact_matches):
+                    if not self.select_match(gallery, exact_matches):
                         not_found_galleries.append(gallery)
                 else:
                     exploded_name = list(filter(None, Search.removed_enclosed(gallery.name).split(" ")))
@@ -383,7 +384,7 @@ class SearchThread(BaseThread):
                         ExDatabase.Title.title.match(rough_name))))
                     if len(rough_matches) == 1:
                         self.update_gallery(gallery, rough_matches[0])
-                    elif len(rough_matches) > 1 and not self.select_by_file_data(gallery, rough_matches):
+                    elif len(rough_matches) > 1 and not self.select_match(gallery, rough_matches):
                         not_found_galleries.append(gallery)
                     elif len(rough_matches) == 0:
                         self.logger.debug(rough_name)
@@ -394,7 +395,7 @@ class SearchThread(BaseThread):
         if not_found_galleries:
             ex_search_thread.queue.put(not_found_galleries)
 
-    def select_by_file_data(self, gallery, matches):
+    def select_match(self, gallery, matches):
         file_size = gallery.get_file_size()
         file_size_matches = [m for m in matches if int(m["filesize"]) == file_size]
         if len(file_size_matches) >= 1:
@@ -407,13 +408,12 @@ class SearchThread(BaseThread):
         if len(rough_file_size_matches) == 1:
             self.update_gallery(gallery, rough_file_size_matches[0])
             return True
-        file_count = len(gallery.get_files(filtered=False))
-        file_count_matches = [m for m in matches if int(m["filecount"]) == file_count]
+        file_count_matches = [m for m in matches if int(m["filecount"]) == gallery.file_count]
         if len(file_count_matches) >= 1:
             self.update_gallery(gallery, file_count_matches[0])
             return True
-        max_file_count = math.floor(file_count + (file_count * .1))
-        min_file_count = math.floor(file_count - (file_count * .1))
+        max_file_count = math.floor(gallery.file_count + (gallery.file_count * .1))
+        min_file_count = math.floor(gallery.file_count - (gallery.file_count * .1))
         rough_file_count_matches = [m for m in matches if min_file_count <= int(m["filecount"]) <= max_file_count]
         if len(rough_file_count_matches) == 1:
             self.update_gallery(gallery, rough_file_count_matches[0])
@@ -432,16 +432,7 @@ class SearchThread(BaseThread):
         result["tags"] = json.loads(result["tags"])
         self.signals.gallery.emit(gallery, {"gmetadata": result})
 
-
-
-
 search_thread = SearchThread()
-
-
-
-
-
-
 
 
 class ExSearchThread(BaseThread):

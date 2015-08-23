@@ -232,9 +232,14 @@ Page {
         }
 
         ScrollView {
+            id: scrollView
             Layout.fillHeight: true
             Layout.fillWidth: true
             __wheelAreaScrollSpeed: 100
+
+            function encodeURIComponents(uri) {
+                return uri.split('/').map(encodeURIComponent).join('/')
+            }
 
             GridView {
                 anchors.fill: parent
@@ -245,7 +250,7 @@ Page {
                 delegate: Component {
                         Image {
                             id: pageImage
-                            source: modelData
+                            source: "file:" + scrollView.encodeURIComponents(modelData)
                             asynchronous: true
                             width: 200
                             height: Math.min(Units.dp(300), implicitHeight)

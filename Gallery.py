@@ -67,7 +67,7 @@ class Gallery(GalleryBoilerplate):
         if kwargs.get("loaded"):
             self.load_from_json(kwargs["json"])
         else:
-            self.validate_file_count()
+            assert self.file_count > 0
             self.find_in_db()
             if self.db_id is None:
                 self.create_in_db()
@@ -150,14 +150,16 @@ class Gallery(GalleryBoilerplate):
         gallery_json["exTitle"] = self.extitle
         gallery_json["exAuto"] = self.ex_auto_collection
         gallery_json["exURL"] = ex_url
-        gallery_json["files"] = list(map(Utils.convert_to_qml_path, self.get_files()))
+        # gallery_json["files"] = list(map(Utils.convert_to_qml_path, self.get_files()))
+        gallery_json["files"] = self.get_files()
 
         return gallery_json
 
     def get_files(self, filtered=False):
         raise NotImplementedError
 
-    def validate_file_count(self):
+    @property
+    def file_count(self):
         raise NotImplementedError
 
     def get_tooltip(self):
@@ -483,7 +485,7 @@ class Gallery(GalleryBoilerplate):
     def generate_uuid(self):
         return str(hashlib.sha1((self.generate_image_hash(index=0) +
                                  self.generate_image_hash(index=-1) +
-                                 str(len(self.get_files()))).encode("utf8")).hexdigest())
+                                 str(self.file_count)).encode("utf8")).hexdigest())
 
     def has_metadata_by_key(self, key):
         metadata = self.metadata.get(key, {})
@@ -583,6 +585,10 @@ class FolderGallery(Gallery):
             hash_algo.update((str(stat.st_mtime_ns) + str(stat.st_size)).encode("utf8"))
         return hash_algo.hexdigest()
 
+    @property
+    def file_count(self):
+        return len(self.get_files())
+
 
 
 class ArchiveGallery(Gallery):
@@ -619,6 +625,10 @@ class ArchiveGallery(Gallery):
             return self.filtered_files(self._raw_files)
         else:
             return self._raw_files
+
+    @property
+    def file_count(self):
+        return len(self.get_raw_files())
 
     @property
     def sort_path(self):
@@ -693,8 +703,6 @@ class ArchiveGallery(Gallery):
         hash_algo.update((str(stat.st_mtime_ns) + str(stat.st_size)).encode("utf8"))
         return hash_algo.hexdigest()
 
-    def validate_file_count(self):
-        assert len(self.get_raw_files()) > 0
 
 
 class ZipGallery(ArchiveGallery):
