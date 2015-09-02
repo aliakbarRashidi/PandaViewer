@@ -1,0 +1,10 @@
+language: python
+python:
+- "3.4"
+
+
+install:
+  - "pip install -r requirements.txt"
+
+script:
+  - nuitka --recurse-all --standalone -j 2 --improved --python-version=3.4 --show-progress --show-modules --python-flag=no_site --show-scons --verbose Program.py
