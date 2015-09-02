@@ -15,7 +15,7 @@
  * You should have received a copy of the GNU Lesser General Public License
  * along with this program. If not, see <http://www.gnu.org/licenses/>.
  */
-import QtQuick 2.0
+import QtQuick 2.5
 import ".."
 
 /*!
@@ -40,6 +40,7 @@ View {
 
     property int dividerInset: 0
     property bool showDivider: false
+    property alias ink: ink
 
     signal clicked()
     signal pressAndHold()
@@ -55,10 +56,9 @@ View {
 
     Ink {
         id: ink
-
         onClicked: listItem.clicked()
         onPressAndHold: listItem.pressAndHold()
-
+        propagateComposedEvents: true
         anchors.fill: parent
 
         enabled: listItem.interactive && listItem.enabled

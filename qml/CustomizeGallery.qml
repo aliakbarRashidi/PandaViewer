@@ -1,6 +1,6 @@
-import QtQuick 2.4
+import QtQuick 2.5
 import QtQuick.Controls 1.3
-import QtQuick.Layouts 1.1
+import QtQuick.Layouts 1.2
 import Material 0.1
 import QtQuick.Dialogs 1.2
 import Material.ListItems 0.1 as ListItem
@@ -96,7 +96,7 @@ Page {
 
         model: galleryModel
         delegate: Component {
-            Gallery {
+            GridGallery {
                 id: galleryCard
                 customizationEnabled: false
             }
@@ -251,7 +251,7 @@ Page {
                         Image {
                             id: pageImage
                             source: "file:" + scrollView.encodeURIComponents(modelData)
-                            asynchronous: true
+                            asynchronous: index > 10
                             width: 200
                             height: Math.min(Units.dp(300), implicitHeight)
                             sourceSize.width: 200

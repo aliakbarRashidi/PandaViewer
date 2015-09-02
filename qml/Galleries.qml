@@ -1,6 +1,6 @@
-import QtQuick 2.4
+import QtQuick 2.5
 import QtQuick.Controls 1.3
-import QtQuick.Layouts 1.1
+import QtQuick.Layouts 1.2
 import QtQml.Models 2.1
 import Material 0.1
 
@@ -11,22 +11,6 @@ Item {
     property bool noSearchResults: false
     ListModel {
         id: galleryModel
-    }
-
-    DelegateModel {
-        id: delegateModel
-
-        model: galleryModel
-        delegate: Component {
-            Loader {
-                visible: status == Loader.Ready
-                sourceComponent: Component {
-                    Gallery {
-                    }
-                }
-                asynchronous: index >= 50
-            }
-        }
     }
 
     ProgressCircle {
@@ -42,13 +26,14 @@ Item {
         mainWindow.setNoSearchResults.connect(galleriesPage.setNoSearchResults)
         mainWindow.setUIGallery.connect(galleriesPage.setUIGallery)
         mainWindow.removeUIGallery.connect(galleriesPage.removeUIGallery)
-        mainWindow.openDetailedGallery.connect(galleriesPage.openDetailedGallery)
+        mainWindow.openDetailedGallery.connect(
+                    galleriesPage.openDetailedGallery)
     }
 
     function openDetailedGallery(gallery) {
         pageStack.push(Qt.resolvedUrl("CustomizeGallery.qml"), {
-                   gallery: gallery
-                   })
+                           gallery: gallery
+                       })
     }
 
     function removeGallery(uuid) {
@@ -69,13 +54,14 @@ Item {
     }
 
     function setUIGallery(index, gallery, resetScroll) {
-        if (resetScroll) grid.positionViewAtBeginning()
+        if (resetScroll) {
+            galleryLoader.item.positionViewAtBeginning()
+        }
+
         galleryModel.set(index, gallery)
-        //        delegateModel.items.addGroups(index, 1, "visible")
     }
 
     function removeUIGallery(index, count) {
-        //        delegateModel.items.removeGroups(index, count, "visible")
         if (index < galleryModel.count) {
             galleryModel.remove(index)
         }
@@ -201,53 +187,94 @@ Item {
         }
     }
 
-    ScrollView {
-        anchors.fill: parent
-        __wheelAreaScrollSpeed: 100
+    Item {
         id: galleryContent
+        anchors.fill: parent
+        function setDisplayMode(gridMode) {
+            galleryLoader.sourceComponent = gridMode ? gridComponent : listComponent
+            galleryLoader.item.positionViewAtBeginning()
+        }
+        Component.onCompleted: {
+            mainWindow.setDisplayModeToGrid.connect(setDisplayMode)
+        }
 
-        GridView {
-            id: grid
-            anchors {
-                top: parent.top
-                bottom: parent.bottom
-                right: parent.right
-                left: parent.left
-                topMargin: Units.dp(16)
-                leftMargin: Units.dp(16)
+        Loader {
+            id: galleryLoader
+            sourceComponent: gridComponent
+        }
+
+        ScrollView {
+            anchors.fill: parent
+            id: scroll
+            __wheelAreaScrollSpeed: 100
+            contentItem: galleryLoader.item
+        }
+
+        Component {
+            id: listComponent
+            ListView {
+                id: list
+                anchors {
+                    top: parent.top
+                    bottom: parent.bottom
+                    right: parent.right
+                    left: parent.left
+                    topMargin: Units.dp(16)
+                    leftMargin: Units.dp(16)
+                    rightMargin: Units.dp(16)
+                }
+                focus: true
+                boundsBehavior: Flickable.DragOverBounds
+
+                //            cellWidth: Units.dp(200 + 16)
+                //            cellHeight: Units.dp(350 + 16 + 16)
+                model: galleryModel
+                cacheBuffer: Units.dp((350 + 16) * 100)
+                delegate: Component {
+                    Loader {
+                        sourceComponent: Component {
+                            ListGallery {
+                                width: list.width
+                            }
+                        }
+                        asynchronous: index >= 50
+                    }
+                }
             }
-            focus: true
-            boundsBehavior: Flickable.DragOverBounds
-            //width: parent.width
+        }
 
-            //        columns: parseInt(content.width / Units.dp(200 + 16)) || 1
-            //        rowSpacing: 0
-            //        columnSpacing: 0
-            cellWidth: Units.dp(200 + 16)
-            cellHeight: Units.dp(350 + 16 + 16)
+        Component {
+            id: gridComponent
+            GridView {
+                id: grid
+                anchors {
+                    top: parent.top
+                    bottom: parent.bottom
+                    right: parent.right
+                    left: parent.left
+                    topMargin: Units.dp(16)
+                    leftMargin: Units.dp(16)
+                    bottomMargin: Units.dp(16)
+                    rightMargin: 0
+                }
+                focus: true
+                boundsBehavior: Flickable.DragOverBounds
+                cellWidth: Units.dp(200 + 16)
+//                cellHeight: Units.dp(350 + 16 + 16)
+                cellHeight: Units.dp(280 + 16)
 
-            model: delegateModel
-            cacheBuffer: Units.dp((350 + 16) * 25)
-
-            //        delegate: Component {
-            //            Gallery {
-            //                id: gallery
-            //            }
-            //        }
-
-            //        Repeater {
-            //            id: galleryRepeater
-            //            model: galleryModel
-            //            delegate: Component {
-            //                Gallery {
-            //                id: gallery
-            //            }
-            //        }
-            //    }
+                model: galleryModel
+                cacheBuffer: Units.dp((350 + 16) * 25)
+                delegate: Component {
+                    Loader {
+                        sourceComponent: Component {
+                            GridGallery {
+                            }
+                        }
+                        asynchronous: index >= 60
+                    }
+                }
+            }
         }
     }
-    //    Scrollbar {
-    //        flickableItem: galleryContent
-
-    //    }
 }

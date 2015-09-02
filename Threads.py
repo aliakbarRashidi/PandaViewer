@@ -7,6 +7,7 @@ import queue
 import weakref
 import copy
 from collections import namedtuple
+from difflib import SequenceMatcher
 import scandir
 import os
 import sys
@@ -30,7 +31,7 @@ class BaseThread(threading.Thread, Logger):
     THREAD_COUNT = multiprocessing.cpu_count()
 
     def __init__(self, **kwargs):
-        super(BaseThread, self).__init__()
+        super().__init__()
         self.name = self.__class__.__name__
         self.daemon = True
         self.queue = queue.Queue()
@@ -92,7 +93,7 @@ class GalleryThread(BaseThread):
     running = False
 
     def setup(self, parent):
-        super(GalleryThread, self).setup(parent)
+        super().setup(parent)
         self.signals = self.Signals()
         self.signals.end.connect(self.parent.find_galleries_done)
         self.signals.folder.connect(self.parent.set_scan_folder)
@@ -278,7 +279,7 @@ class ImageThread(BaseThread):
     bg_run_count = 0
 
     def setup(self, parent):
-        super(ImageThread, self).setup(parent)
+        super().setup(parent)
         self.signals = self.Signals()
         self.signals.end.connect(self.parent.image_thread_done)
         self.signals.gallery.connect(self.parent.set_ui_gallery)
@@ -295,7 +296,8 @@ class ImageThread(BaseThread):
             except queue.Empty:
                 pass
             if self.bg_run_count < self.MAX_BG_RUNS:
-                galleries = [g for g in self.parent.galleries if not g.thumbnail_verified]
+                galleries = [g for g in self.parent.filter_galleries(self.parent.galleries)
+                             if not g.thumbnail_verified]
                 if galleries:
                     self.bg_run_count += 1
                     self.generate_images(galleries[:self.BG_GALLERY_COUNT], background=True)
@@ -350,7 +352,7 @@ class SearchThread(BaseThread):
         gallery = QtCore.pyqtSignal(object, dict)
 
     def setup(self, parent):
-        super(SearchThread, self).setup(parent)
+        super().setup(parent)
         self.signals = self.Signals()
         self.signals.gallery.connect(self.parent.update_gallery_metadata)
 
@@ -396,14 +398,15 @@ class SearchThread(BaseThread):
             ex_search_thread.queue.put(not_found_galleries)
 
     def select_match(self, gallery, matches):
+        matches = [m for m in matches if SequenceMatcher(None, gallery.name, m["title"]).ratio() >= .6]
         file_size = gallery.get_file_size()
         file_size_matches = [m for m in matches if int(m["filesize"]) == file_size]
         if len(file_size_matches) >= 1:
             self.update_gallery(gallery, file_size_matches[0])
             return True
         size_percent_diff = .1 if isinstance(gallery, FolderGallery) else .15
-        max_file_size = math.floor(file_size + (file_size * size_percent_diff))
-        min_file_size = math.floor(file_size - (file_size * size_percent_diff))
+        max_file_size = math.floor(file_size * (1 + size_percent_diff))
+        min_file_size = math.floor(file_size * (1 - size_percent_diff))
         rough_file_size_matches = [m for m in matches if min_file_size <= int(m["filesize"]) <= max_file_size]
         if len(rough_file_size_matches) == 1:
             self.update_gallery(gallery, rough_file_size_matches[0])
@@ -412,8 +415,8 @@ class SearchThread(BaseThread):
         if len(file_count_matches) >= 1:
             self.update_gallery(gallery, file_count_matches[0])
             return True
-        max_file_count = math.floor(gallery.file_count + (gallery.file_count * .1))
-        min_file_count = math.floor(gallery.file_count - (gallery.file_count * .1))
+        max_file_count = math.floor(gallery.file_count * (1.1))
+        min_file_count = math.floor(gallery.file_count * (.9))
         rough_file_count_matches = [m for m in matches if min_file_count <= int(m["filecount"]) <= max_file_count]
         if len(rough_file_count_matches) == 1:
             self.update_gallery(gallery, rough_file_count_matches[0])
@@ -442,7 +445,7 @@ class ExSearchThread(BaseThread):
     API_ENTRIES = 10
 
     def setup(self, parent):
-        super(ExSearchThread, self).setup(parent)
+        super().setup(parent)
         self.signals = self.Signals()
         self.signals.end.connect(self.parent.get_metadata_done)
         self.signals.gallery.connect(self.parent.update_gallery_metadata)
@@ -519,7 +522,7 @@ class DuplicateFinderThread(BaseThread):
         end = QtCore.pyqtSignal()
 
     def setup(self, parent):
-        super(DuplicateFinderThread, self).setup(parent)
+        super().setup(parent)
         self.signals = self.Signals()
         self.signals.end.connect(self.parent.duplicate_thread_done)
 

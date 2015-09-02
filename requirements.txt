@@ -1,6 +1,5 @@
 beautifulsoup4==4.3.2
 humanize==0.5.1
-Nuitka32==5.0.1430
 profilehooks==1.8.0
 psutil==3.1.1
 requests==2.7.0

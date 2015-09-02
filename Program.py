@@ -48,7 +48,7 @@ class Program(QtWidgets.QApplication, Logger):
         :type pages list[list[Gallery]]
         :type galleries list[Gallery]
         """
-        super(Program, self).__init__(args)
+        super().__init__(args)
 
         self.tags = []
         self.pages = [[]]
@@ -65,12 +65,12 @@ class Program(QtWidgets.QApplication, Logger):
             os.makedirs(self.THUMB_DIR)
         UserDatabase.setup()
 
-        self.setAttribute(QtCore.Qt.AA_UseOpenGLES, True)
+        # self.setAttribute(QtCore.Qt.AA_UseOpenGLES, True)
 
-        #self.addLibraryPath(self.QML_PATH)
+        self.addLibraryPath(self.QML_PATH)
         self.qml_engine = QtQml.QQmlApplicationEngine()
         self.qml_engine.addImportPath(self.QML_PATH)
-        #self.qml_engine.addPluginPath(self.QML_PATH)
+        self.qml_engine.addPluginPath(self.QML_PATH)
 
         self.qml_engine.load(os.path.join(self.QML_PATH, "main.qml"))
         self.app_window = self.qml_engine.rootObjects()[0]
@@ -100,6 +100,7 @@ class Program(QtWidgets.QApplication, Logger):
         self.set_ui_config()
         self.app_window.show()
         self.setup_threads()
+
 
     def setup_completer(self):
         self.completer = QtWidgets.QCompleter(self.tags)
@@ -264,11 +265,18 @@ class Program(QtWidgets.QApplication, Logger):
 
     @staticmethod
     def in_search(tags, title, input_tag):
+        namespace_match = re.compile("^(.*):")
+        namespace = re.search(namespace_match, input_tag)
+        if namespace:
+            namespace = namespace.group(1)
         for title_word in title:
             if input_tag in title_word:
                 return True
         for tag in tags:
-            if input_tag in tag:
+            tag_namespace = re.search(namespace_match, tag)
+            if tag_namespace:
+                tag_namespace = tag_namespace.group(1)
+            if input_tag in tag and (tag_namespace is None or tag_namespace == namespace):
                 return True
         return False
 

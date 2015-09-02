@@ -109,10 +109,5 @@ Item {
         height: Math.max(orientation == Qt.Vertical ? end - start : 0, thickness)
         x: orientation == Qt.Horizontal ? start : 0
         y: orientation == Qt.Vertical ? start : 0
-
-        MouseArea {
-            anchors.fill: parent
-        }
-
     }
 }

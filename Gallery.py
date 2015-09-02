@@ -527,7 +527,7 @@ class FolderGallery(Gallery):
         self.name = self.path.split(os.sep)[-1]
         if kwargs.get("loaded"):
             assert any(os.path.isfile(os.path.join(self.path, f)) for f in os.listdir(self.path))
-        super(FolderGallery, self).__init__(**kwargs)
+        super().__init__(**kwargs)
 
     def get_files(self, filtered=True):
         self.files_lock.acquire()
@@ -602,10 +602,10 @@ class ArchiveGallery(Gallery):
         self.path = os.path.dirname(self.archive_file)
         self.name, self.archive_type = os.path.splitext(os.path.basename(self.archive_file))
         self.archive_type = self.archive_type[1:]
-        super(ArchiveGallery, self).__init__(**kwargs)
+        super().__init__(**kwargs)
 
     def __del__(self):
-        super(ArchiveGallery, self).__del__()
+        super().__del__()
         if self.temp_dir:
             try:
                 shutil.rmtree(self.temp_dir)
@@ -645,7 +645,7 @@ class ArchiveGallery(Gallery):
 
     def open_file(self, index=0):
         if getattr(config, "extract_" + self.archive_type.lower()) or index != 0:
-            super(ArchiveGallery, self).open_file(index)
+            super().open_file(index)
         else:
             QtGui.QDesktopServices.openUrl(QtCore.QUrl.fromLocalFile(self.archive_file))
 
@@ -688,7 +688,7 @@ class ArchiveGallery(Gallery):
         if os.name == "nt":
             subprocess.call("explorer.exe /select, \"%s\"" % self.archive_file)
         else:
-            super(ArchiveGallery, self).open_folder()
+            super().open_folder()
 
     def find_file_index(self, path):
         path = os.path.basename(Utils.normalize_path(path))

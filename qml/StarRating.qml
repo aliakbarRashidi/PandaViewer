@@ -1,12 +1,12 @@
-import QtQuick 2.4
+import QtQuick 2.5
 import QtQuick.Controls 1.3
-import QtQuick.Layouts 1.1
+import QtQuick.Layouts 1.2
 import Material 0.1
 
 Row {
     property real currentRating
     signal starClicked(real rating)
-
+    property color starColor: Theme.light.iconColor
     onCurrentRatingChanged: starRepeater.currentStarValue = currentRating
 
     Repeater {
@@ -21,8 +21,8 @@ Row {
             property int starNum: modelData
             name: starRepeater.noStar
             size: Units.dp(16)
+            color: starColor
 
-            //color: theme.accentColor
             states: [
                 State {
                     when: (starIcon.starNum <= starRepeater.currentStarValue)
@@ -64,7 +64,7 @@ Row {
                         Tooltip {
                             text: "Rating: " + currentRating
                             mouseArea: mouseAreaRepeater.itemAt(index)
-                            Component.onCompleted: start()
+//                            Component.onCompleted: start()
                         }
                     }
                     acceptedButtons: Qt.LeftButton | Qt.RightButton
@@ -82,7 +82,7 @@ Row {
                                 = leftArea ? starIcon.starNum - .5 : starIcon.starNum
                     }
                     onExited: {
-                        starRatingTooltipLoader.source = ""
+                        starRatingTooltipLoader.sourceComponent = undefined
                         starRepeater.currentStarValue = currentRating
                     }
                     onPositionChanged: starRatingTooltipLoader.sourceComponent

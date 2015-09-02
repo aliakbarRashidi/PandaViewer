@@ -1,6 +1,6 @@
-import QtQuick 2.4
+import QtQuick 2.5
 import QtQuick.Controls 1.3
-import QtQuick.Layouts 1.1
+import QtQuick.Layouts 1.2
 import Qt.labs.settings 1.0
 import Material 0.1
 import Material.Extras 0.1
@@ -92,12 +92,13 @@ ApplicationWindow {
     signal removeUIGallery(int index, int count)
     signal getDetailedGallery(string uuid)
     signal setUISort(int sortType, int reversed)
+    signal setDisplayModeToGrid(bool gridMode)
     signal closedUI
 
     signal openDetailedGallery(var gallery)
 
     function garbageCollect() {
-        gc()
+//        gc()
     }
 
     function setTags(tags) {
@@ -181,12 +182,15 @@ ApplicationWindow {
 
             function toggle() {
                 visible = !visible && enabled
+                searchText.forceActiveFocus()
             }
 
-            function accecpt() {
+            function accept() {
                 setSearchText(searchText.text)
                 autoCompleteDropdown.close()
             }
+
+
 
             Card {
                 id: searchCard
@@ -228,11 +232,11 @@ ApplicationWindow {
                         mainWindow.askForTags(word)
                     }
                     function proccessEnter() {
-                        if (autoCompleteDropdown.visible) {
+                        if (autoCompleteDropdown.visible && autoCompleteDropdown.view.count > 0) {
                             addTag()
                             autoCompleteDropdown.close()
                         } else {
-                            searchContainer.accecpt()
+                            searchContainer.accept()
                         }
                     }
 
@@ -347,6 +351,18 @@ ApplicationWindow {
                 onTriggered: sortDialog.show()
             },
 
+//            Action {
+//                name: gridMode ? "List" : "Grid"
+//                property bool gridMode: true
+//                iconName: gridMode ? "action/view_list" : "action/view_module"
+
+//                onTriggered: {
+//                    gridMode = !gridMode
+//                    mainWindow.setDisplayModeToGrid(gridMode)
+//                }
+
+//            },
+
             Action {
                 name: "Find new galleries"
                 iconName: "awesome/database"
@@ -379,7 +395,7 @@ ApplicationWindow {
         NavigationDrawer {
             id: navDrawer
             enabled: false
-            visible: false
+            visible: enabled
 
             Keys.onEscapePressed: navDrawer.close()
             Flickable {
@@ -391,27 +407,13 @@ ApplicationWindow {
                     id: content
                     anchors.fill: parent
 
-                    Repeater {
-                        model: sections
+                    ListItem.Standard {
+                        action: Icon {
+                            size: Units.dp(32)
 
-                        delegate: Column {
-                            width: parent.width
-
-                            ListItem.Subheader {
-                                text: sectionTitles[index]
-                            }
-
-                            Repeater {
-                                model: modelData
-                                delegate: ListItem.Standard {
-                                    text: modelData
-                                    onClicked: {
-                                        navDrawer.close()
-                                    }
-                                }
-                            }
                         }
                     }
+
                 }
             }
         }
