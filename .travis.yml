@@ -1,14 +1,11 @@
 language: python
 python:
-- "2.7"
 - "3.4"
-
-matrix:
-  exclude:
-    - python: "2.7"
 
 install:
   - "pip install -r requirements.txt"
 
 script:
+  - python2 --version
+  - alias python=`python2`
   - nuitka --recurse-all --standalone --improved --python-version=3.4 --python-flag=no_site Program.py
