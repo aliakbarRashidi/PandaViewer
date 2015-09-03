@@ -9,11 +9,11 @@ class Utils(Logger):
         return list(map(dict, result))
 
     @classmethod
-    def convert_from_relative_path(cls, path):
+    def convert_from_relative_path(cls, path=""):
         return cls.normalize_path(os.path.join(os.path.dirname(__file__), path))
 
     @classmethod
-    def convert_from_relative_lsv_path(cls, path):
+    def convert_from_relative_lsv_path(cls, path=""):
         return cls.normalize_path(os.path.join("~/.lsv", path))
 
     @classmethod

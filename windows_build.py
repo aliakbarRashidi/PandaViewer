@@ -2,6 +2,7 @@ from subprocess import Popen
 import os
 import sys
 import shutil
+from distutils import dir_util
 
 build_dir = os.path.abspath("Program.dist/")
 dist_dir = os.path.join(os.path.abspath("."), "PandaViewer")
@@ -9,6 +10,7 @@ remove_files = ["d.dll", "d.pdb", "qt5webkit.dll", "qt5webkitwidgets.dll", "qt5p
                "qt5sql.dll", "qt5script.dll", "qt5designer.dll", ".pyc"]
 subp = Popen("nuitka_build.bat", shell=True)
 subp.communicate()
+dir_util.copy_tree("copy", build_dir)
 shutil.copytree("qml", os.path.join(build_dir, "qml/"))
 os.rename(os.path.join(build_dir, "Program.exe"), os.path.join(build_dir, "PandaViewer.exe"))
 shutil.copy("icon.ico", os.path.join(build_dir, "icon.ico"))

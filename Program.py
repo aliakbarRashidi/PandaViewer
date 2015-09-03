@@ -10,6 +10,7 @@ from PyQt5 import QtWidgets
 from PyQt5 import QtQml
 from PyQt5 import QtQuick
 from PyQt5 import QtNetwork
+from PyQt5 import QtSvg
 from PyQt5 import QtCore
 from operator import attrgetter
 import os
@@ -19,14 +20,13 @@ import gc
 # Need to run before importing project files
 if os.name == "nt":
     os.environ["UNRAR_LIB_PATH"] = Utils.convert_from_relative_path("unrar.dll")
-if not os.path.exists(Utils.convert_from_relative_lsv_path("")):
-    os.mkdir(Utils.convert_from_relative_lsv_path(""))
+if not os.path.exists(Utils.convert_from_relative_lsv_path()):
+    os.mkdir(Utils.convert_from_relative_lsv_path())
 import Threads
 import Exceptions
 import UserDatabase
 from Gallery import Gallery
 from Config import config
-
 
 class Program(QtWidgets.QApplication, Logger):
     PAGE_SIZE = 100
@@ -48,8 +48,8 @@ class Program(QtWidgets.QApplication, Logger):
         :type pages list[list[Gallery]]
         :type galleries list[Gallery]
         """
+        self.addLibraryPath(Utils.convert_from_relative_path())
         super().__init__(args)
-
         self.tags = []
         self.pages = [[]]
         self.galleries = []
@@ -65,13 +65,10 @@ class Program(QtWidgets.QApplication, Logger):
             os.makedirs(self.THUMB_DIR)
         UserDatabase.setup()
 
-        # self.setAttribute(QtCore.Qt.AA_UseOpenGLES, True)
-
-        self.addLibraryPath(self.QML_PATH)
         self.qml_engine = QtQml.QQmlApplicationEngine()
         self.qml_engine.addImportPath(self.QML_PATH)
-        self.qml_engine.addPluginPath(self.QML_PATH)
-
+        # self.qml_engine.addPluginPath(self.QML_PATH)
+        self.setAttribute(QtCore.Qt.AA_UseOpenGLES, True)
         self.qml_engine.load(os.path.join(self.QML_PATH, "main.qml"))
         self.app_window = self.qml_engine.rootObjects()[0]
         self.app_window.updateGalleryRating.connect(self.update_gallery_rating)
@@ -475,7 +472,6 @@ if __name__ == "__main__":
     if os.name == "nt":
         import ctypes
         ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("pv.ui")
-
 
     app = Program(sys.argv)
     sys.excepthook = app.exception_hook

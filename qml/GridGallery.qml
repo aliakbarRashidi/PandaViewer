@@ -1,9 +1,6 @@
-import QtQuick 2.5
+import QtQuick 2.0
 import QtQuick.Controls 1.3
-import QtQuick.Layouts 1.2
 import Material 0.1
-import Material.ListItems 0.1 as ListItem
-import Material.Extras 0.1
 
 Gallery {
     id: gallery
