@@ -7,7 +7,7 @@ before_install:
 
 install:
   - pip install -r requirements.txt
-  - pip install python-pyqt5
+  - pip install python-qt5
 
 
 script:
