@@ -1,17 +1,19 @@
 #!/usr/bin/env python3
 
+
 import sys
+sys.stdout = open("stdout.txt", "w")
+sys.stderr = open("stderr.txt", "w")
 import logging
 from Logger import Logger
 from Utils import Utils
 from time import strftime
-from PyQt5 import QtGui
-from PyQt5 import QtWidgets
+from PyQt5 import QtCore
 from PyQt5 import QtQml
 from PyQt5 import QtQuick
 from PyQt5 import QtNetwork
-from PyQt5 import QtSvg
-from PyQt5 import QtCore
+from PyQt5 import QtWidgets
+from PyQt5 import QtGui
 from operator import attrgetter
 import os
 import re
@@ -472,6 +474,11 @@ if __name__ == "__main__":
     if os.name == "nt":
         import ctypes
         ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("pv.ui")
+    logger = Logger()
+    logger.name = "Qt logger"
+    def message_handler(kind, context, msg):
+        logger.logger.info("Kind: %s\nContext: %s\nMsg: %s" % (kind, context, msg))
+    QtCore.qInstallMessageHandler(message_handler)
 
     app = Program(sys.argv)
     sys.excepthook = app.exception_hook
