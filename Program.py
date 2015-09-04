@@ -275,7 +275,7 @@ class Program(QtWidgets.QApplication, Logger):
             tag_namespace = re.search(namespace_match, tag)
             if tag_namespace:
                 tag_namespace = tag_namespace.group(1)
-            if input_tag in tag and (tag_namespace is None or tag_namespace == namespace):
+            if input_tag in tag and (namespace is None or tag_namespace == namespace):
                 return True
         return False
 
@@ -300,6 +300,7 @@ class Program(QtWidgets.QApplication, Logger):
             if raw_tag:
                 self.tags.append(raw_tag.groups()[0])
         self.tags += list(map(lambda x: "-" + x, self.tags))
+        self.tags = list(set(self.tags))
         self.tags.sort()
         self.setup_completer()
 
