@@ -2,8 +2,14 @@ language: python
 python:
 - "3.4"
 
-before_install:
-  - sudo apt-get update -qq
+
+addons:
+  apt:
+    sources:
+      pyqt5
+    packages:
+      qt5
+
 
 install:
   - pip install -r requirements.txt

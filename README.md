@@ -21,7 +21,7 @@ Currently we support folder galleries (i.e. loose files in a folder), ZIP/CBZ, a
 Installation
 ---------------------
 PandaViewer strives to be as cross platform as possible. However, only Windows binaries are currently provided.
-Users on different platforms (OSX/Linux) should 
+Users on different platforms (OSX/Linux) should try running the program from source (see development setup).
 
 Check the [releases page](https://github.com/seanegoodwin/PandaViewer/releases) and download the most recent one.
 
@@ -29,7 +29,7 @@ Check the [releases page](https://github.com/seanegoodwin/PandaViewer/releases) 
 Development Setup
 ---------------------
 This section details the steps needed to setup your computer to run PandaViewer directly from source
-- that is, the Python files in this repo. The steps are mostly the same whether you are using 
+\- that is, the Python files in this repo. The steps are mostly the same whether you are using 
 Windows, OSX, or Linux, although there are some platform specific steps required. 
 
 Please note that the vast majority of development and testing is done on Windows and it is
@@ -44,8 +44,9 @@ Notes:
 
 Steps:
 
-1. Install Python. PandaViewer currently runs on the latest version of Python3 (3.4). Python2 is not
-supported. If you are on Windows, I recommend downloading the 32-bit version, not the 64-bit one.
+1. Install Python. PandaViewer only runs on the latest version of Python3 (3.5). 
+Python2 or older versions of Python3 are not supported. 
+If you are on Windows, I recommend downloading the 32-bit version, not the 64-bit one.
 
 1. Install Qt. PandaViewer makes use of open source edition of Qt 5.4.
 It can be found [here](http://www.qt.io/download-open-source/)
@@ -117,4 +118,5 @@ The details of the license can be found in the LICENSE file.
 A number of third party libraries and tools are used by PandaViewer. 
 A list of them and their respective licenses can be found in the THIRD_PARTY_LICENSES file.
 
-The Windows builds are distributed  
+The Windows builds are distributed with an UnRAR DLL.
+Program icon provided by - http://polkaparadise.deviantart.com/art/FREE-Panda-icon-352383477
