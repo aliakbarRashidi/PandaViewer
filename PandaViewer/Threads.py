@@ -7,8 +7,6 @@ import math
 import time
 import copy
 import queue
-import weakref
-import scandir
 import threading
 from PyQt5 import QtCore
 from typing import List, Dict
@@ -24,11 +22,8 @@ from .Logger import Logger
 from .Search import Search
 from .Config import Config
 from PandaViewer import Exceptions, ExDatabase, UserDatabase
-# from PandaViewer.Exceptions as Exceptions
-# import PandaViewer.ExDatabase as ExDatabase
-# import PandaViewer.UserDatabase as UserDatabase
 from .RequestManager import RequestManager
-from .Gallery import GenericGallery, FolderGallery, ZipGallery, RarGallery
+from .Gallery import GenericGallery, FolderGallery, ZipGallery, RarGallery, GalleryIDMap
 
 
 class BaseThread(threading.Thread, Logger):
@@ -106,7 +101,7 @@ class GalleryThread(BaseThread):
             if paths is None:
                 self.load_all_galleries_from_db()
             else:
-                self.find_galleries()
+                self.find_galleries(paths)
 
     def load_all_galleries_from_db(self):
         self.logger.info("Starting to load galleries from database.")
@@ -145,19 +140,24 @@ class GalleryThread(BaseThread):
             for metadata in metadata_map.get(gallery["id"], []):
                 name = metadata.pop("name")
                 gallery["metadata"][name] = metadata
-            candidate = {"path": gallery["path"],
-                         "json": gallery,
-                         "type": gallery["type"],
-                         "loaded": True}
+            candidate = {
+                "path": gallery["path"],
+                "json": gallery,
+                "type": gallery["type"],
+                "loaded": True
+            }
             candidates.append(candidate)
         self.logger.info("Done loading galleries from database.")
         self.create_from_dict(candidates)
 
-    def find_galleries(self):
+    def find_galleries(self, folders: List[str]):
+        """
+        Searches recursively through the provided folders and tries to create galleries from files/directories
+        """
         candidates = []
         self.logger.info("Starting search for new galleries.")
-        for path in Config.folders[:]:
-            for base_folder, folders, files in scandir.walk(path):
+        for folder in folders:
+            for base_folder, folders, files in os.walk(folder):
                 images = []
                 self.signals.folder.emit(base_folder)
                 for f in files:
@@ -167,15 +167,19 @@ class GalleryThread(BaseThread):
                     elif ext in ZipGallery.ARCHIVE_EXTS + RarGallery.ARCHIVE_EXTS:
                         archive_file = os.path.join(base_folder, f)
                         if ext in ZipGallery.ARCHIVE_EXTS:
-                            type = GenericGallery.TypeMap.ZipGallery
+                            type = GalleryIDMap.ZipGallery
                         elif ext in RarGallery.ARCHIVE_EXTS:
-                            type = GenericGallery.TypeMap.RarGallery
+                            type = GalleryIDMap.RarGallery
+                        assert type
                         candidates.append({"path": archive_file,
                                            "type": type,})
                 if images:
-                    candidates.append({"path": base_folder,
-                                       "type": GenericGallery.TypeMap.FolderGallery,
-                                       "files": sorted(images, key=lambda f: f.lower())})
+                    candidates.append(
+                        {
+                            "path": base_folder,
+                            "type": GalleryIDMap.FolderGallery,
+                            "files": sorted(images, key=lambda f: f.lower())
+                        })
         self.logger.info("Done with search for new galleries.")
         self.create_from_dict(candidates)
 
@@ -223,7 +227,7 @@ class GalleryThread(BaseThread):
             try:
                 candidate = global_queue.get_nowait()
                 self.signals.folder.emit(candidate["path"])
-                gallery_obj = GenericGallery.get_class_from_type(candidate["type"])(**candidate)
+                gallery_obj = GenericGallery.create_from_type(candidate["type"], candidate)
                 galleries.append(gallery_obj)
             except queue.Empty:
                 break

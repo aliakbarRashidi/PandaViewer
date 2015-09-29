@@ -1,7 +1,7 @@
 import os
 import sys
-sys.stdout = open("stdout.txt", "w")
-sys.stderr = open("stderr.txt", "w")
+# sys.stdout = open("stdout.txt", "w")
+# sys.stderr = open("stderr.txt", "w")
 import logging
 from PyQt5 import QtCore
 from time import strftime
@@ -29,6 +29,8 @@ if os.name == "nt":
     import ctypes
     ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("pv.ui") # Required for Windows 7+
     os.environ["UNRAR_LIB_PATH"] = Utils.convert_from_relative_path("unrar.dll")
+elif os.name == "posix":
+    os.environ["UNRAR_LIB_PATH"] = Utils.convert_from_relative_path("libunrar.so")
 
 from . import Metadata, Gallery, Program, Threads
 app = Program.Program(sys.argv)

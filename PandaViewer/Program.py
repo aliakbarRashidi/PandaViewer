@@ -210,11 +210,7 @@ class Program(QtWidgets.QApplication, Logger):
 
     def search(self):
         self.logger.info("Search_text: %s" % self.search_text)
-        if self.search_text == "":
-            self.app_window.setNoSearchResults.emit(False)
-            self.setup_pages()
-            self.show_page()
-        else:
+        if self.search_text:
             words, filters, rating_method = self.process_search(self.search_text)
             galleries = []
             for gallery in self.galleries:
@@ -230,8 +226,12 @@ class Program(QtWidgets.QApplication, Logger):
                     continue
                 if all(self.in_search(tags, title, w) for w in words) or len(words) == 0:
                     galleries.append(gallery)
-            self.app_window.setNoSearchResults.emit(len(galleries) == 0)
+            self.app_window.setNoSearchResults.emit(not bool(galleries))
             self.setup_pages(galleries)
+            self.show_page()
+        else:
+            self.app_window.setNoSearchResults.emit(False)
+            self.setup_pages()
             self.show_page()
 
     @staticmethod
@@ -267,7 +267,7 @@ class Program(QtWidgets.QApplication, Logger):
     def find_galleries(self, initial: bool = False):
         self.app_window.setScanningMode(True)
         self.logger.debug("Sending start signal to gallery thread")
-        folders = Config.folders if not initial else None
+        folders = Config.folders[:] if not initial else None
         Threads.gallery_thread.queue.put(folders)
 
     def find_galleries_done(self, galleries: List[GenericGallery]):

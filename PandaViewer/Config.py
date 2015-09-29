@@ -34,7 +34,6 @@ class Config(Logger, SafeConfigParser):
         AUTO_METADATA_KEY,
     ]
 
-    _parent = None
 
     def __init__(self):
         super().__init__()
@@ -44,14 +43,6 @@ class Config(Logger, SafeConfigParser):
             self.save()
         self.setup()
         self.save()
-
-    @property
-    def parent(self):
-        return self._parent()
-
-    @parent.setter
-    def parent(self, value):
-        self._parent = weakref.ref(value)
 
     def setup(self):
         for section in self.SECTIONS:
@@ -96,7 +87,6 @@ class Config(Logger, SafeConfigParser):
             if folder_options.get(folder) != self.folder_options.get(folder):
                 self.folder_metadata_map = folder_options
                 update_auto_metadata_collection = True
-                # self.parent.set_auto_metadata_collection()
                 break
         self.folder_options = folder_options
         self.save()

@@ -1,12 +1,12 @@
 import os
 import json
 import shutil
-import scandir
 import hashlib
 import tempfile
 import humanize
 import subprocess
 from time import time
+from enum import Enum
 from uuid import uuid1
 from unrar import rarfile
 from threading import Lock
@@ -22,6 +22,12 @@ from . import zipfile, Metadata, Exceptions, UserDatabase
 from .Utils import Utils
 from .Logger import Logger
 from .Config import Config
+
+
+class GalleryIDMap(Enum):
+    FolderGallery = 0
+    ZipGallery = 1
+    RarGallery = 2
 
 
 class GenericGallery(Logger):
@@ -49,11 +55,6 @@ class GenericGallery(Logger):
     db_uuid_verified = False
     metadata_manager = None
 
-    class TypeMap(object):
-        FolderGallery = 0
-        ZipGallery = 1
-        RarGallery = 2
-
 
     def __repr__(self):
         return "%s: %s" % (self.__class__.__name__, self.location)
@@ -76,13 +77,8 @@ class GenericGallery(Logger):
             self.delete()
 
     @classmethod
-    def get_class_from_type(cls, type: int) -> 'GenericGallery':
-        if type == cls.TypeMap.FolderGallery:
-            return FolderGallery
-        elif type == cls.TypeMap.ZipGallery:
-            return ZipGallery
-        elif type == cls.TypeMap.RarGallery:
-            return RarGallery
+    def create_from_type(cls, type: int, gallery_json: dict) -> 'GenericGallery':
+        return list(GalleryClassMap)[type].value(**gallery_json)
 
     @classmethod
     def generate_hash_from_file(cls, file_path: str) -> str:
@@ -93,7 +89,7 @@ class GenericGallery(Logger):
     def get_image_from_file(self, file_path: str) -> QtGui.QImage:
         assert os.path.exists(file_path)
         image = QtGui.QImageReader()
-        image.setDecideFormatFromContent(True)
+        image.setDecideFormatFromContent(True) # Required for cases when the extension doesn't match the content
         image.setFileName(file_path)
         image = image.read()
         assert image.width()
@@ -139,14 +135,14 @@ class GenericGallery(Logger):
         tag_map = {}
         for tag in self.metadata_manager.all_tags:
             tag, namespace = Utils.separate_tag(tag)
-            namespace = str(namespace).capitalize()
+            namespace = str(namespace).lower().capitalize()
             value = tag_map.get(namespace, [])
             value.append(tag)
             tag_map[namespace] = value
         if tag_map:
-            namespace_tags = sorted([(namespace, sorted(tags)) for namespace, tags in tag_map.items()], key=itemgetter(0))
-            tag_tooltip = ""
-            tag_tooltip += "<table align=left cellspacing=0 cellpadding=0>"
+            namespace_tags = sorted([(namespace, sorted(tags)) for namespace, tags in tag_map.items()],
+                                    key=itemgetter(0))
+            tag_tooltip = "<table align=left cellspacing=0 cellpadding=0>"
             for namespace, tags in namespace_tags:
                 tag_tooltip += "<tr><td>%s: </td><td>" % namespace
                 current_line = ""
@@ -156,12 +152,12 @@ class GenericGallery(Logger):
                         current_line = ""
                         tag_tooltip += "<br>" + tag_entry
                     else:
-                        current_line += tag
                         tag_tooltip += tag_entry
+                    current_line += tag
                 if tag_tooltip[-2:] == ", ":
                     tag_tooltip = tag_tooltip[:-2]
                 tag_tooltip += "</td></tr>"
-            tooltip += "</table>"
+            tag_tooltip += "</table>"
             tooltip += tag_tooltip
         return tooltip
 
@@ -485,10 +481,9 @@ class GenericGallery(Logger):
         raise NotImplementedError
 
 
-
 class FolderGallery(GenericGallery):
     _files = None
-    type = GenericGallery.TypeMap.FolderGallery
+    type = GalleryIDMap.FolderGallery
 
     def __init__(self, **kwargs):
         self.folder = Utils.normalize_path(kwargs.get("path"))
@@ -531,13 +526,12 @@ class FolderGallery(GenericGallery):
 
     def find_files(self):
         found_files = []
-        for base_folder, _, files in scandir.walk(self.folder):
+        for base_folder, _, files in os.walk(self.folder):
             for f in files:
                 if Utils.file_has_allowed_extension(f, self.IMAGE_EXTS):
                     found_files.append(os.path.join(base_folder, f))
             break
         found_files = list(map(os.path.normpath, found_files))
-        # self.files = sorted(found_files, key=lambda f: f.lower())
         self._files = Utils.human_sort_paths(found_files)
 
     def delete_file(self):
@@ -586,12 +580,11 @@ class FolderGallery(GenericGallery):
         self.reset_files()
 
 
-
 class ArchiveGallery(GenericGallery):
     ARCHIVE_EXTS = ()
     temp_dir = None
-    archive_class = None
     archive_type = None
+    archive_file = None
     _raw_files = None
 
     def __init__(self, **kwargs):
@@ -721,10 +714,9 @@ class ArchiveGallery(GenericGallery):
         self.reset_files()
 
 
-
 class ZipGallery(ArchiveGallery):
     ARCHIVE_EXTS = (".zip", ".cbz")
-    type = GenericGallery.TypeMap.ZipGallery
+    type = GalleryIDMap.ZipGallery
 
     @property
     @contextmanager
@@ -742,7 +734,7 @@ class ZipGallery(ArchiveGallery):
 
 class RarGallery(ArchiveGallery):
     ARCHIVE_EXTS = (".rar", ".cbr")
-    type = GenericGallery.TypeMap.RarGallery
+    type = GalleryIDMap.RarGallery
     _archive = None
 
     @property
@@ -754,3 +746,9 @@ class RarGallery(ArchiveGallery):
         except Exception:
             self.logger.error("Failed to complete archive op for %s" % self.archive_file, exc_info=True)
             raise Exceptions.UnknownArchiveError()
+
+
+class GalleryClassMap(Enum):
+    FolderGallery = FolderGallery
+    ZipGallery = ZipGallery
+    RarGallery = RarGallery

@@ -93,8 +93,9 @@ class MetadataManager(Logger):
                         WebMetadata) and value and value != self.get_metadata_value(MetadataClassMap[db_name], "url"):
                     webmetadata_url_changed = True
                 self.update_metadata_value(MetadataClassMap[db_name], key, value)
-        for metadata in self.metadata.values():
+        for metadata in list(self.metadata.values()):
             if isinstance(metadata, WebMetadata) and not metadata.url:
+                self.metadata.pop(metadata.DB_NAME)
                 metadata.delete()
         return webmetadata_url_changed
 
@@ -110,7 +111,7 @@ class MetadataManager(Logger):
 
     @property
     def all_tags(self):
-        return [tag for metadata in self.metadata.values() for tag in metadata.tags]
+        return list(set(tag.lower() for metadata in self.metadata.values() for tag in metadata.tags))
 
     @property
     def gallery(self) -> 'PandaViewer.Gallery.GenericGallery':
@@ -131,6 +132,9 @@ class Metadata(Logger):
         self.json = json or {}
         self.manager = manager
         self.db_id = self.json.pop("id", None)
+
+    def __repr__(self):
+        return "%s: %s" % (self.manager.gallery, self.DB_NAME)
 
     @classmethod
     def clean_metadata(cls, metadata) -> Dict:
@@ -158,6 +162,7 @@ class Metadata(Logger):
         if self.db_id is None:
             self.create()
         else:
+            self.logger.info("{SELF} saving metadata".format(SELF=self))
             with UserDatabase.get_session(self) as session:
                 session.execute(update(UserDatabase.Metadata).where(UserDatabase.Metadata.id == self.db_id).values(
                     {
@@ -166,6 +171,7 @@ class Metadata(Logger):
                 ))
 
     def create(self):
+        self.logger.info("{SELF} creating db entry".format(SELF=self))
         with UserDatabase.get_session(self) as session:
             result = session.execute(insert(UserDatabase.Metadata).values(
                 {
@@ -177,6 +183,7 @@ class Metadata(Logger):
             self.db_id = int(result.inserted_primary_key[0])
 
     def delete(self):
+        self.logger.info("{SELF} deleting db entry".format(SELF=self))
         with UserDatabase.get_session(self) as session:
             session.execute(delete(UserDatabase.Metadata).where(
                 UserDatabase.Metadata.id == self.db_id

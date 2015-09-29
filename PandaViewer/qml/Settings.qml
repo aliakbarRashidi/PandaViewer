@@ -14,7 +14,7 @@ Page {
 
     actions: [
         Action {
-            iconName: "content/Save"
+            iconName: "content/save"
             name: "Save"
             onTriggered: {
                 page.saveSettings()
