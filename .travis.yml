@@ -17,4 +17,4 @@ install:
 
 script:
   - alias python='python2'
-  - nuitka --recurse-all --standalone --improved --python-version=3.4 --python-flag=no_site Program.py
+  - nuitka --recurse-all --standalone --improved --python-version=3.4 --python-flag=no_site program.py

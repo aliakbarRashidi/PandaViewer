@@ -1,19 +1,26 @@
 PandaViewer
 =====================
 
+
 Overview
 ---------------------
-This program is aimed at helping you manage collections of manga, doujinshi, and the like.
+PandaViewer is a cross-platform(\*) application designed for helping you browse and manage your collections of 
+manga, doujinshi, comics, and similar articles. 
 
-This is done by recursively scanning a list of folders that you specify, indexing all folders/archive that contain images (png/jpg), and storing that in
-our database. Galleries are displayed individually, with options for searching (tags + title) and sorting them by name, rating, read count, etc.
+* \* Only binaries for Windows are currently provided. Linux and Mac binaries will likely become available at a later date.
 
-We also support automatically downloading metadata from EX. To do so, add your account details in the settings page and then click the action "Download Metadata".
-You can also download metadata for a specific gallery by opening the gallery's menu and selecting "Download Metadata".
+![img1](http://i.imgur.com/oo4v5hG.jpg)
 
-Each gallery can be customized with custom metadata as well. Under the gallery's menu, select "Info".
+Features
+---------------------
 
-
+* Directory-structure independent scanning - no matter how (un)organized your collection is, PandaViewer can import it.
+* Metadata editor/support for custom metadata.
+* Automated metadata collection from EX, either directly or through provided offline database.
+* Ability to disable metadata collection for specific galleries/folders.
+* Namespace-aware search bar with tag auto-completion.
+* Sort galleries by name, read-count, last read time, time added, file path, or rating.
+* Filter out galleries by rating via the rating: field. (e.g. rating:>=4 will show galleries with a rating greater than or equal to 4)
 
 Currently we support folder galleries (i.e. loose files in a folder), ZIP/CBZ, and RAR/CBR.
 

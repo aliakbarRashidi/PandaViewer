@@ -5,8 +5,8 @@ import sys
 import logging
 from PyQt5 import QtCore
 from time import strftime
-from .Utils import Utils
-from .Logger import Logger
+from .utils import Utils
+from .logger import Logger
 
 # Setup application-wide logging
 if not os.path.exists(Utils.convert_from_relative_lsv_path()):
@@ -32,8 +32,8 @@ if os.name == "nt":
 elif os.name == "posix":
     os.environ["UNRAR_LIB_PATH"] = Utils.convert_from_relative_path("libunrar.so")
 
-from . import Metadata, Gallery, Program, Threads
-app = Program.Program(sys.argv)
+from . import metadata, gallery, program, threads
+app = program.Program(sys.argv)
 sys.excepthook = app.exception_hook
-Threads.setup()
+threads.setup()
 app.setup()

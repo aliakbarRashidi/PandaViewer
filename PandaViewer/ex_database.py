@@ -1,9 +1,9 @@
 import sqlalchemy
 from sqlalchemy.ext.declarative import declarative_base
-from PandaViewer.Utils import Utils
+from PandaViewer.utils import Utils
 import contextlib
 from threading import Lock
-from PandaViewer.Logger import Logger
+from PandaViewer.logger import Logger
 import os
 
 

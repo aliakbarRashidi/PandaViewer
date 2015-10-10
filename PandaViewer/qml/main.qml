@@ -97,7 +97,8 @@ ApplicationWindow {
 
     signal openDetailedGallery(var gallery)
 
-    function garbageCollect() {//        gc()
+    function garbageCollect() {
+                gc()
     }
 
     function setTags(tags) {

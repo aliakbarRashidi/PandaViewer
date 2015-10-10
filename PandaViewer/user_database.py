@@ -5,8 +5,8 @@ import contextlib
 from sqlalchemy.ext.declarative import declarative_base
 import os
 from threading import Lock
-from PandaViewer.Logger import Logger
-from PandaViewer.Utils import Utils
+from PandaViewer.logger import Logger
+from PandaViewer.utils import Utils
 
 DB_NAME = "db.sqlite"
 DATABASE_FILE = Utils.convert_from_relative_lsv_path(DB_NAME)
