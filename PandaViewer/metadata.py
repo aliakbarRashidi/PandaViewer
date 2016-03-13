@@ -110,7 +110,7 @@ class MetadataManager(Logger):
         return True
 
     @property
-    def all_tags(self):
+    def all_tags(self) -> List[str]:
         return list(set(tag.lower() for metadata in self.metadata.values() for tag in metadata.tags))
 
     @property
@@ -127,7 +127,6 @@ class Metadata(Logger):
     GALLERY_URL = None
     json = None
     _manager = None
-
 
     def __repr__(self):
         return "%s: %s" % (self.manager.gallery, self.DB_NAME)
@@ -157,8 +156,8 @@ class Metadata(Logger):
             self.json[key] = new_metadata[key]
 
     def update_value(self, key: str, value: Any):
-            getattr(self, key)
-            setattr(self, key, value)
+        assert hasattr(self, key)
+        setattr(self, key, value)
 
     def save(self):
         if self.db_id is None:
@@ -292,7 +291,6 @@ class WebMetadata(Metadata):
 class CustomMetadata(GenericMetadata):
     DB_NAME = "cmetadata"
 
-
     def get_customize_json(self) -> Dict:
         return {
             "name": "Custom Metadata",
@@ -349,7 +347,6 @@ class ChaikaMetadata(WebMetadata, GenericMetadata):
     BASE_GALLERY_URL = "http://panda.chaika.moe/archive/{ID}/"
     URL_VALIDATOR_REGEX = "^(https?:\/\/)?panda\.chaika\.moe\/archive\/\w+?\/$"
     METADATA_NAME = "Chaika Metadata"
-
 
     @property
     def id(self):

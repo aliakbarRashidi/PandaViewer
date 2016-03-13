@@ -156,6 +156,8 @@ class GalleryThread(BaseThread):
         """
         Searches recursively through the provided folders and tries to create galleries from files/directories
         """
+        folders = [f for f in folders if
+                   not Utils.path_exists_under_directory(Utils.convert_from_relative_lsv_path(), f)]
         candidates = []
         self.logger.debug("Starting search for new galleries.")
         self.logger.info("Scan folders: {FOLDERS}".format(FOLDERS=folders))
@@ -294,6 +296,9 @@ class EventProcessorThread(BaseThread):
                         for gallery in PandaViewer.app.galleries:
                             if Utils.path_exists_under_directory(source, gallery.folder):
                                 gallery.folder_moved(source, destination)
+                                if not any(Utils.path_exists_under_directory(d, gallery.folder)
+                                           for d in Config.folders):
+                                    PandaViewer.app.remove_gallery_and_recalculate_pages(gallery)
                 else:
                     with PandaViewer.app.gallery_lock:
                         gallery = next((g for g in PandaViewer.app.filter_galleries(PandaViewer.app.galleries)
@@ -302,6 +307,8 @@ class EventProcessorThread(BaseThread):
                         if source_folder != destination_folder:
                             gallery.folder_moved(source_folder, destination_folder)
                         gallery.file_moved(destination)
+                        if not any(Utils.path_exists_under_directory(d, gallery.folder) for d in Config.folders):
+                            PandaViewer.app.remove_gallery_and_recalculate_pages(gallery)
             elif event.event_type == "deleted":
                 if event.is_directory:
                     with PandaViewer.app.gallery_lock:
@@ -639,6 +646,7 @@ class DuplicateFinderThread(BaseThread):
         self.signals.end.emit()
 
 duplicate_thread = DuplicateFinderThread()
+
 
 DAEMON_THREADS = [
     gallery_thread,

@@ -31,7 +31,7 @@ class GalleryIDMap(Enum):
 
 
 class GenericGallery(Logger):
-    IMAGE_EXTS = (".png", ".jpg", ".jpeg")
+    IMAGE_EXTS = (".png", ".jpg", ".jpeg", ".gif")
     IMAGE_WIDTH = 200
     IMAGE_HEIGHT = 280
     MAX_TOOLTIP_LENGTH = 80
@@ -121,7 +121,7 @@ class GenericGallery(Logger):
             "dbUUID": self.ui_uuid,
             "category": self.metadata_manager.get_value("category"),
             "galleryHasMetadata": self.metadata_manager.get_metadata_value(
-                metadata.MetadataClassMap.gmetadata, "url") != "",
+                metadata.MetadataClassMap.gmetadata, "url") != "", # TODO fix for future sites
             "image": Utils.convert_to_qml_path(self.thumbnail_path),
         }
 
@@ -300,10 +300,11 @@ class GenericGallery(Logger):
             self.image_hash = self.generate_image_hash(index=int(self.thumbnail_source))
         except (TypeError, ValueError):
             self.image_hash = self.generate_hash_from_file(self.thumbnail_source)
-        image = self.resize_thumbnail_source()
-        self.logger.debug("Saving new thumbnail")
-        assert image.save(self.thumbnail_path, "JPG")
-        assert os.path.exists(self.thumbnail_path)
+        if not os.path.exists(self.thumbnail_path):
+            image = self.resize_thumbnail_source()
+            self.logger.debug("Saving new thumbnail")
+            assert image.save(self.thumbnail_path, "JPG")
+            assert os.path.exists(self.thumbnail_path)
 
     def load_thumbnail(self):
         if not self.has_valid_thumbnail():

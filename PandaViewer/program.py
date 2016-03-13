@@ -4,7 +4,7 @@ import gc
 from enum import Enum
 from random import randint
 from threading import RLock
-from typing import List, Dict
+from typing import List, Dict, Tuple
 from bisect import insort_left
 from operator import attrgetter
 from PyQt5 import QtCore, QtQml, QtQuick, QtNetwork, QtWidgets, QtGui
@@ -190,7 +190,7 @@ class Program(QtWidgets.QApplication, Logger):
             if metadata_changed:
                 gallery.save_metadata(update_ui=False)
 
-    def process_search(self, search_text):
+    def process_search(self, search_text: str) -> (List[str], [List[str], str]):
         search_text = search_text.lower()
         quote_regex = re.compile(r"(-)?\"(.*?)\"")
         filter_regex = re.compile(r"(?:^|\s)\-(.*?)(?=(?:$|\ ))")
@@ -229,8 +229,7 @@ class Program(QtWidgets.QApplication, Logger):
                     title = gallery.clean_name.lower().split()
                     rating = gallery.metadata_manager.get_value("rating")
                     tags = [t.replace(" ", "_").lower() for t in gallery.metadata_manager.all_tags]
-                    if rating_method and (not rating or
-                                              not eval(str(rating) + rating_method)):
+                    if rating_method and (not rating or not eval(str(rating) + rating_method)):
                         continue
                     if any(self.in_search(tags, title, w) for w in filters):
                         continue
@@ -245,7 +244,7 @@ class Program(QtWidgets.QApplication, Logger):
             self.show_page()
 
     @staticmethod
-    def in_search(tags, title, input_tag) -> bool:
+    def in_search(tags: List[str], title: str, input_tag: str) -> bool:
         input_tag, namespace = Utils.separate_tag(input_tag)
         for title_word in title:
             if input_tag in title_word:
@@ -397,9 +396,6 @@ class Program(QtWidgets.QApplication, Logger):
         self.app_window.setPageCount(self.page_count)
         self.page_number = 0
         self.app_window.setPage(self.page_number + 1)
-
-    def setup_gallery_associations(self):
-        pass
 
     def remove_gallery_and_recalculate_pages(self, gallery: GenericGallery):
         assert gallery in self.galleries

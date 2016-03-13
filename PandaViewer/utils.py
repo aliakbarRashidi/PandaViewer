@@ -3,15 +3,15 @@ import re
 import sys
 import hashlib
 from sqlalchemy.engine import ResultProxy
-from typing import List, Dict, Any, Tuple, Iterable
+from typing import List, Dict, Any, Tuple, Iterable, Optional
 from PandaViewer.logger import Logger
 
 
 class Utils(Logger):
 
 
-    @classmethod
-    def convert_result(cls, result: ResultProxy) -> List:
+    @staticmethod
+    def convert_result(result: ResultProxy) -> List:
         return list(map(dict, result))
 
     @classmethod
@@ -24,16 +24,17 @@ class Utils(Logger):
 
     @classmethod
     def convert_from_relative_lsv_path(cls, path: str = "") -> str:
-        return cls.normalize_path(os.path.join("~/.lsv", path))
+        portable_path = cls.convert_from_relative_path(os.path.join(".lsv", path))
+        if os.path.exists(portable_path):
+            return portable_path
+        else:
+            return cls.normalize_path(os.path.join("~/.lsv", path))
 
     @classmethod
     def path_exists_under_directory(cls, main_directory: str, sub_directory: str) -> bool:
-        main_directory = cls.normalize_path(main_directory)
-        sub_directory = cls.normalize_path(sub_directory)
-        if main_directory[-1] != os.path.sep:
-            main_directory += os.path.sep
-        if sub_directory[-1] != os.path.sep:
-            sub_directory += os.path.sep
+        ensure_trailing_sep = lambda x: x if x[-1] == os.path.sep else x + os.path.sep
+        main_directory = ensure_trailing_sep(cls.normalize_path(main_directory))
+        sub_directory = ensure_trailing_sep(cls.normalize_path(sub_directory))
         return sub_directory.startswith(main_directory)
 
     @classmethod
@@ -43,17 +44,18 @@ class Utils(Logger):
                       if cls.path_exists_under_directory(c, folder)]
         return max(candidates, key=len)
 
-    @classmethod
-    def file_has_allowed_extension(cls, check_file: str, allowed_extensions: List[str]) -> bool:
+    @staticmethod
+    def file_has_allowed_extension(check_file: str, allowed_extensions: List[str]) -> bool:
+        allowed_extensions = [ext.lower() for ext in allowed_extensions]
         ext = os.path.splitext(check_file)[-1].lower()
         return ext in allowed_extensions
 
-    @classmethod
-    def normalize_path(cls, path):
+    @staticmethod
+    def normalize_path(path: str) -> str:
         return os.path.normpath(os.path.realpath(os.path.expanduser(path)))
 
-    @classmethod
-    def convert_to_qml_path(cls, path):
+    @staticmethod
+    def convert_to_qml_path(path: str) -> str:
         base_string = "file://"
         if os.name == "nt":
             base_string += "/"
@@ -64,14 +66,7 @@ class Utils(Logger):
         cls = cls()
         for galleries in duplicate_map.values():
             paths = [cls.normalize_path(gallery.location) for gallery in galleries]
-            try:
-                assert len(paths) == len(set(paths))
-            except AssertionError:
-                cls.logger.error("Galleries: %s" % galleries)
-                cls.logger.error("Paths: %s" % len(paths))
-                cls.logger.error("Set: %s" % len(set(paths)))
-                cls.logger.error("Bad: %s" % [p for p in paths if p not in list(set(paths))])
-                raise
+            assert len(paths) == len(set(paths))
             method_names = ["has_ex_metadata", "has_custom_metadata", "is_archive_gallery"]
             for method_name in method_names:
                 if any(getattr(gallery, method_name)() for gallery in galleries):
@@ -89,7 +84,7 @@ class Utils(Logger):
                 gallery.mark_for_deletion()
 
     @classmethod
-    def generate_hash_from_source(cls, source):
+    def generate_hash_from_source(cls, source) -> str:
         BUFF_SIZE = 65536
         hash_algo = hashlib.sha1()
         buff = source.read(BUFF_SIZE)
@@ -111,23 +106,23 @@ class Utils(Logger):
         return list(map(lambda x: x.replace(" ", "_"), cls.convert_csv_to_list(ui_tags)))
 
     @classmethod
-    def process_ex_url(cls, url):
+    def process_ex_url(cls, url: str) -> (str, str):
         split_url = url.split("/")
         if split_url[-1]:
             return int(split_url[-2]), split_url[-1]
         else:
             return int(split_url[-3]), split_url[-2]
 
-    @classmethod
-    def convert_list_to_csv(cls, input_list: List) -> str:
+    @staticmethod
+    def convert_list_to_csv(input_list: List) -> str:
         return ", ".join(input_list)
 
-    @classmethod
-    def convert_csv_to_list(cls, csv: str) -> List[str]:
+    @staticmethod
+    def convert_csv_to_list(csv: str) -> List[str]:
         return list(filter(None, map(lambda x: re.sub("^\s+", "", x), csv.split(","))))
 
-    @classmethod
-    def human_sort_paths(cls, paths):
+    @staticmethod
+    def human_sort_paths(paths: List[str]) -> List[str]:
         key = None
         if os.name == "nt":
             import ctypes
@@ -135,8 +130,8 @@ class Utils(Logger):
             key = functools.cmp_to_key(ctypes.windll.shlwapi.StrCmpLogicalW)
         return sorted(paths, key=key)
 
-    @classmethod
-    def separate_tag(cls, tag: str) -> Tuple:
+    @staticmethod
+    def separate_tag(tag: str) -> (str, Optional[str]):
         namespace_regex = re.compile("^(.*):(.*)$")
         match = re.search(namespace_regex, tag)
         if match:
@@ -153,14 +148,14 @@ class Utils(Logger):
             title = title.replace(char, " ")
         return " ".join(title.split())
 
-    @classmethod
-    def removed_enclosed(cls, input_str: str) -> str:
+    @staticmethod
+    def removed_enclosed(input_str: str) -> str:
         """
         Removes any values between/including containers (braces, parens, etc)
         :param input_str: str to operate on
         :return: str with enclosed data removed
         """
-        pairs = [("{", "}"), ("(", ")"), ("[", "]")]
+        pairs = (("{", "}"), ("(", ")"), ("[", "]"))
         regex = r"\s*\%s[^%s]*\%s"
         for pair in pairs:
             input_str = re.sub(regex % (pair[0], pair[0], pair[1]), " ",  input_str)

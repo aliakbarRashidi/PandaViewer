@@ -1,6 +1,7 @@
 import json
 import codecs
 import weakref
+from PyQt5 import QtQml
 from configparser import SafeConfigParser
 import PandaViewer
 from PandaViewer.utils import Utils
@@ -17,7 +18,6 @@ class Config(Logger, SafeConfigParser):
             "sort_type",
             "sort_mode_reversed",
             "confirm_delete",
-
         ],
         "Archives": [
             "extract_zip",
@@ -69,7 +69,7 @@ class Config(Logger, SafeConfigParser):
                 ui_config[option] = getattr(self, option)
         return ui_config
 
-    def update_from_ui_config(self, ui_config):
+    def update_from_ui_config(self, ui_config: QtQml.QJSValue) -> bool:
         self.logger.info("Updating config")
         old_folders = self.folders
         self.folders = ui_config.property("folders").toVariant()
