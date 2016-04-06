@@ -1,7 +1,7 @@
 import os
 import sys
-sys.stdout = open("stdout.txt", "w")
-sys.stderr = open("stderr.txt", "w")
+#sys.stdout = open("stdout.txt", "w")
+#sys.stderr = open("stderr.txt", "w")
 import logging
 from PyQt5 import QtCore
 from time import strftime

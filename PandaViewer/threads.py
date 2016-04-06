@@ -315,7 +315,7 @@ class EventProcessorThread(BaseThread):
                         for gallery in PandaViewer.app.galleries:
                             if Utils.path_exists_under_directory(source, gallery.folder):
                                 gallery.gallery_deleted()
-                                PandaViewer.app.remove_gallery_and_recalculate_pages(gallery)
+                                PandaViewer.app.remove_gallery_and_recalculate_pages(gallery, force_assertion=False)
                 else:
                     with PandaViewer.app.gallery_lock:
                         gallery = next((g for g in PandaViewer.app.filter_galleries(PandaViewer.app.galleries)
@@ -323,13 +323,13 @@ class EventProcessorThread(BaseThread):
                     if gallery:
                         if gallery.file_deleted():
                             gallery.gallery_deleted()
-                            PandaViewer.app.remove_gallery_and_recalculate_pages(gallery)
+                            PandaViewer.app.remove_gallery_and_recalculate_pages(gallery, force_assertion=False)
                     elif os.name == "nt":  # Windows doesn't have the is_directory flag set correctly for deleted events
                         with PandaViewer.app.gallery_lock:
                             for gallery in PandaViewer.app.galleries:
                                 if Utils.path_exists_under_directory(source, gallery.folder):
                                     gallery.gallery_deleted()
-                                    PandaViewer.app.remove_gallery_and_recalculate_pages(gallery)
+                                    PandaViewer.app.remove_gallery_and_recalculate_pages(gallery, force_assertion=False)
             elif event.event_type == "created":
                 if event.is_directory:
                     gallery_thread.queue.put([source_folder])

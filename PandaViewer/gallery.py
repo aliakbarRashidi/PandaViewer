@@ -54,6 +54,7 @@ class GenericGallery(Logger):
     thumbnail_verified = False
     db_uuid_verified = False
     metadata_manager = None
+    release_called = False
     lock = RLock()
 
     def __repr__(self):
@@ -70,10 +71,6 @@ class GenericGallery(Logger):
             if self.db_id is None:
                 self.create_in_db()
             self.load_from_db()
-
-    def __del__(self):
-        if self.user_deleted:
-            self.delete()
 
     def __lt__(self, other):
         key = [t.value for t in PandaViewer.app.SortMethodMap][Config.sort_type]
@@ -104,6 +101,13 @@ class GenericGallery(Logger):
             f for f in files if
             os.path.splitext(os.path.basename(f).lower())[0] not in cls.FILTERED_FILES
             ]
+
+    def release(self):
+        if self.release_called:
+            return
+        if self.user_deleted:
+            self.delete_from_db()
+        self.release_called = True
 
     def save_customization(self, ui_metadata: QtQml.QJSValue):
         if self.metadata_manager.update_from_ui_metadata(ui_metadata):
@@ -216,9 +220,6 @@ class GenericGallery(Logger):
         except OSError:
             self.logger.error("Failed to delete gallery from hd", exc_info=True)
             raise exceptions.UnableToDeleteGalleryError(self)
-
-    def delete(self):
-        self.delete_from_db()
 
     def delete_from_db(self):
         self.logger.debug("Deleting from db.")
@@ -443,7 +444,7 @@ class GenericGallery(Logger):
     def get_files(self, filtered=False):
         raise NotImplementedError
 
-    def find_files(self):
+    def find_files(self, find_all=False) -> List[str]:
         raise NotImplementedError
 
     @property
@@ -512,7 +513,7 @@ class FolderGallery(GenericGallery):
     def get_files(self, filtered=True):
         with self.lock:
             if self._files is None:
-                self.find_files()
+                self._files = self.find_files()
         if filtered:
             return self.filtered_files(self._files)
         else:
@@ -528,18 +529,21 @@ class FolderGallery(GenericGallery):
         index = index if index is not None else 0
         return self.generate_hash_from_file(self.get_files()[index])
 
-    def find_files(self):
+    def find_files(self, find_all=False) -> List[str]:
         found_files = []
         for base_folder, _, files in os.walk(self.folder):
             for f in files:
-                if Utils.file_has_allowed_extension(f, self.IMAGE_EXTS):
+                if Utils.file_has_allowed_extension(f, self.IMAGE_EXTS) or find_all:
                     found_files.append(os.path.join(base_folder, f))
             break
         found_files = list(map(os.path.normpath, found_files))
-        self._files = Utils.human_sort_paths(found_files)
+        return Utils.human_sort_paths(found_files)
 
     def delete_file(self):
-        send2trash(self.folder)
+        if (len(self.get_files(filtered=False)) != len(self.find_files(find_all=True))):
+            for f in self.get_files(filtered=False): send2trash(f)
+        else:
+            send2trash(self.folder)
 
     def get_file_size(self):
         return sum(os.path.getsize(f) for f in self.get_files(filtered=False))
@@ -640,7 +644,7 @@ class ArchiveGallery(GenericGallery):
     def get_raw_files(self, filtered=True):
         with self.lock:
             if self._raw_files is None:
-                self.find_files()
+                self._raw_files = self.find_files()
         if filtered:
             return self.filtered_files(self._raw_files)
         else:
@@ -688,11 +692,11 @@ class ArchiveGallery(GenericGallery):
         files = [os.path.join(self.temp_dir, f) for f in self.get_raw_files(filtered=filtered)]
         return self.filtered_files(list(map(Utils.normalize_path, files)))
 
-    def find_files(self):
+    def find_files(self, find_all=False) -> List[str]:
         with self.archive as archive:
             raw_files = [f for f in archive.namelist()
                          if Utils.file_has_allowed_extension(f, self.IMAGE_EXTS)]
-        self._raw_files = Utils.human_sort_paths(raw_files)
+        return Utils.human_sort_paths(raw_files)
 
     def delete_file(self):
         send2trash(self.archive_file)
@@ -727,7 +731,7 @@ class ArchiveGallery(GenericGallery):
     def reset_files(self):
         with self.lock:
             self._raw_files = None
-        self.find_files()
+        self._raw_files = self.find_files()
 
     def file_belongs_to_gallery(self, f: str):
         return f == self.archive_file

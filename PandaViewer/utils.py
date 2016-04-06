@@ -8,6 +8,7 @@ from PandaViewer.logger import Logger
 
 
 class Utils(Logger):
+    ensure_trailing_sep = lambda x: x if x[-1] == os.path.sep else x + os.path.sep
 
 
     @staticmethod
@@ -32,9 +33,8 @@ class Utils(Logger):
 
     @classmethod
     def path_exists_under_directory(cls, main_directory: str, sub_directory: str) -> bool:
-        ensure_trailing_sep = lambda x: x if x[-1] == os.path.sep else x + os.path.sep
-        main_directory = ensure_trailing_sep(cls.normalize_path(main_directory))
-        sub_directory = ensure_trailing_sep(cls.normalize_path(sub_directory))
+        main_directory = cls.ensure_trailing_sep(cls.normalize_path(main_directory))
+        sub_directory = cls.ensure_trailing_sep(cls.normalize_path(sub_directory))
         return sub_directory.startswith(main_directory)
 
     @classmethod

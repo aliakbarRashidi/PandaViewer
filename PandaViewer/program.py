@@ -40,6 +40,7 @@ class Program(QtWidgets.QApplication, Logger):
         self.tags = []  # type: List[str]
         self.pages = [[]]  # type: List[List[GenericGallery]]
         self.galleries = []  # type: List[GenericGallery]
+        self.removed_galleries = [] #  type: List[GenericGallery]
         self.version = "0.1"  # Most likely used for db changes only
         self.page_number = 0
         self.search_text = ""
@@ -103,9 +104,8 @@ class Program(QtWidgets.QApplication, Logger):
 
     def remove_gallery_by_uuid(self, uuid: str):
         gallery = self.get_gallery_by_ui_uuid(uuid)
-        gallery.mark_for_deletion()
+        gallery.mark_for_deletion() # Also removes
         self.setup_tags()
-        self.remove_gallery_and_recalculate_pages(gallery)
 
     def get_detailed_gallery(self, uuid: str):
         self.app_window.openDetailedGallery.emit(self.get_gallery_by_ui_uuid(uuid).get_detailed_json())
@@ -364,7 +364,8 @@ class Program(QtWidgets.QApplication, Logger):
 
     def close(self):
         with self.gallery_lock:
-            for g in self.galleries: g.__del__()
+            for g in self.galleries: g.release()
+        for g in self.removed_galleries: g.release()
         self.quit()
 
     def sort(self):
@@ -397,8 +398,12 @@ class Program(QtWidgets.QApplication, Logger):
         self.page_number = 0
         self.app_window.setPage(self.page_number + 1)
 
-    def remove_gallery_and_recalculate_pages(self, gallery: GenericGallery):
-        assert gallery in self.galleries
+    def remove_gallery_and_recalculate_pages(self, gallery: GenericGallery, force_assertion=True):
+        gallery_in_galleries = gallery in self.galleries
+        if force_assertion:
+            assert gallery_in_galleries
+        elif not gallery_in_galleries:
+            return
         working_page = None
         with self.gallery_lock:
             self.galleries.remove(gallery)
@@ -417,6 +422,7 @@ class Program(QtWidgets.QApplication, Logger):
                 self.switch_page(self.page_count)
             elif initial_page_is_displayed:
                 self.show_page(reset_scroll=False)
+        self.removed_galleries.append(gallery)
 
     def thread_exception_handler(self, thread, exception):
         self.exception_hook(*exception)
