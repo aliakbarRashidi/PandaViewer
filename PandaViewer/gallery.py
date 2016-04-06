@@ -107,6 +107,8 @@ class GenericGallery(Logger):
             return
         if self.user_deleted:
             self.delete_from_db()
+            if isinstance(self, FolderGallery) and os.path.exists(self.folder):
+                shutil.rmtree(self.folder)
         self.release_called = True
 
     def save_customization(self, ui_metadata: QtQml.QJSValue):

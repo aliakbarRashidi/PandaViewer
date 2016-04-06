@@ -363,9 +363,12 @@ class Program(QtWidgets.QApplication, Logger):
         self.sort()
 
     def close(self):
-        with self.gallery_lock:
-            for g in self.galleries: g.release()
-        for g in self.removed_galleries: g.release()
+        try:
+            with self.gallery_lock:
+                    for g in self.galleries: g.release()
+            for g in self.removed_galleries: g.release()
+        except:
+            self.logger.error("Failed to complete release, check log", exc_info=True)
         self.quit()
 
     def sort(self):
